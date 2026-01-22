@@ -2,117 +2,159 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
-interface Transfer {
-  id: string
-  from_user_id: string
-  to_user_id: string
-  status: string
-  requested_at: string
-  responded_at?: string
-  from_user?: {
-    first_name: string
-    last_name: string
-    email: string
-  }
-  to_user?: {
-    first_name: string
-    last_name: string
-    email: string
-  }
-  transfer_items?: any[]
-}
-
 export function useTraspasos() {
   const { user } = useAuthStore()
-  const [loading, setLoading] = useState(true)
-  const [solicitudesRecibidas, setSolicitudesRecibidas] = useState<Transfer[]>([])
-  const [solicitudesEnviadas, setSolicitudesEnviadas] = useState<Transfer[]>([])
-  const [historial, setHistorial] = useState<Transfer[]>([])
+  const [traspasos, setTraspasos] = useState([])
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (user) {
-      fetchTraspasos()
+  // ✅ NUEVA FUNCIÓN: Obtener canastillas disponibles (sin contar solicitudes pendientes)
+  const obtenerCanastillasDisponibles = async (userId: string) => {
+    try {
+      // Obtener todas las canastillas del usuario
+      const { data: canastillas } = await supabase
+        .from('canastillas')
+        .select('id')
+        .eq('current_owner_id', userId)
+        .eq('status', 'DISPONIBLE')
+
+      // Obtener solicitudes PENDIENTES del usuario
+      const { data: solicitudesPendientes } = await supabase
+        .from('traspasos')
+        .select('canastilla_id')
+        .eq('from_user_id', userId)
+        .eq('status', 'PENDIENTE')
+
+      const canastillasEnSolicitud = solicitudesPendientes?.map(s => s.canastilla_id) || []
+      const disponiblesReales = canastillas?.filter(c => !canastillasEnSolicitud.includes(c.id)) || []
+
+      return disponiblesReales.length
+    } catch (error) {
+      console.error('Error obteniendo canastillas disponibles:', error)
+      return 0
     }
-  }, [user])
+  }
 
-  const fetchTraspasos = async () => {
-    if (!user) return
+  // ✅ VALIDAR antes de crear solicitud
+  const crearSolicitudTraspaso = async (
+    toUserId: string,
+    canastillaIds: string[],
+    notas?: string
+  ) => {
+    if (!user?.id) return { success: false, error: 'Usuario no autenticado' }
 
     try {
       setLoading(true)
 
-      // TRASPASOS RECIBIDOS (pendientes)
-      const { data: received, error: receivedError } = await supabase
-        .from('transfers')
-        .select(`
-          *,
-          from_user:from_user_id(first_name, last_name, email),
-          transfer_items(*)
-        `)
-        .eq('to_user_id', user.id)
-        .eq('status', 'PENDIENTE')
-        .order('requested_at', { ascending: false })
+      // 1. Obtener canastillas disponibles reales
+      const disponibles = await obtenerCanastillasDisponibles(user.id)
 
-      if (receivedError) {
-        console.error('Error fetching received transfers:', receivedError)
-        throw receivedError
+      // 2. Validar que NO EXCEDA las disponibles
+      if (canastillaIds.length > disponibles) {
+        return {
+          success: false,
+          error: `No puedes traspasar ${canastillaIds.length} canastillas. Solo tienes ${disponibles} disponibles.`
+        }
       }
 
-      // TRASPASOS ENVIADOS (pendientes)
-      const { data: sent, error: sentError } = await supabase
-        .from('transfers')
-        .select(`
-          *,
-          to_user:to_user_id(first_name, last_name, email),
-          transfer_items(*)
-        `)
-        .eq('from_user_id', user.id)
-        .eq('status', 'PENDIENTE')
-        .order('requested_at', { ascending: false })
+      // 3. Validar que las canastillas existan y sean del usuario
+      const { data: canastillasValidas } = await supabase
+        .from('canastillas')
+        .select('id, status')
+        .in('id', canastillaIds)
+        .eq('current_owner_id', user.id)
+        .eq('status', 'DISPONIBLE')
 
-      if (sentError) {
-        console.error('Error fetching sent transfers:', sentError)
-        throw sentError
+      if (!canastillasValidas || canastillasValidas.length !== canastillaIds.length) {
+        return {
+          success: false,
+          error: 'Algunas canastillas no existen o no están disponibles'
+        }
       }
 
-      // HISTORIAL (aceptados, rechazados y cancelados)
-      const { data: history, error: historyError } = await supabase
-        .from('transfers')
-        .select(`
-          *,
-          from_user:from_user_id(first_name, last_name, email),
-          to_user:to_user_id(first_name, last_name, email),
-          transfer_items(*)
-        `)
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-        .in('status', ['ACEPTADO', 'RECHAZADO', 'CANCELADO'])
-        .order('responded_at', { ascending: false })
-        .limit(50)
+      // 4. Crear solicitudes (SIN cambiar status aún)
+      const traspasos = canastillaIds.map(canastillaId => ({
+        from_user_id: user.id,
+        to_user_id: toUserId,
+        canastilla_id: canastillaId,
+        status: 'PENDIENTE',
+        notas: notas || null,
+        created_at: new Date().toISOString(),
+      }))
 
-      if (historyError) {
-        console.error('Error fetching history:', historyError)
-        throw historyError
+      const { error: insertError } = await supabase
+        .from('traspasos')
+        .insert(traspasos)
+
+      if (insertError) throw insertError
+
+      return {
+        success: true,
+        message: `Solicitud de ${canastillaIds.length} canastilla(s) creada exitosamente`
       }
-
-      setSolicitudesRecibidas(received || [])
-      setSolicitudesEnviadas(sent || [])
-      setHistorial(history || [])
-    } catch (error) {
-      console.error('Error fetching traspasos:', error)
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Error al crear solicitud'
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const refreshTraspasos = () => {
-    fetchTraspasos()
+  // ✅ CONFIRMAR traspaso (aquí SÍ se cambia el status)
+  const confirmarTraspaso = async (traspasoIds: string[]) => {
+    try {
+      setLoading(true)
+
+      const { error } = await supabase
+        .from('traspasos')
+        .update({ status: 'CONFIRMADO' })
+        .in('id', traspasoIds)
+
+      if (error) throw error
+
+      // Actualizar canastillas a EN_TRASPASO
+      const { data: traspasos } = await supabase
+        .from('traspasos')
+        .select('canastilla_id')
+        .in('id', traspasoIds)
+
+      const canastillaIds = traspasos?.map(t => t.canastilla_id) || []
+
+      await supabase
+        .from('canastillas')
+        .update({ status: 'EN_TRASPASO' })
+        .in('id', canastillaIds)
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ✅ RECHAZAR traspaso (eliminar solicitud)
+  const rechazarTraspaso = async (traspasoIds: string[]) => {
+    try {
+      const { error } = await supabase
+        .from('traspasos')
+        .delete()
+        .in('id', traspasoIds)
+
+      if (error) throw error
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   }
 
   return {
+    traspasos,
     loading,
-    solicitudesRecibidas,
-    solicitudesEnviadas,
-    historial,
-    refreshTraspasos,
+    crearSolicitudTraspaso,
+    confirmarTraspaso,
+    rechazarTraspaso,
+    obtenerCanastillasDisponibles,
   }
 }
