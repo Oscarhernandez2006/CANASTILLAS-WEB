@@ -12,6 +12,7 @@ import { AlquileresPage } from './pages/AlquileresPage'
 import { UsuariosPage } from './pages/UsuariosPage'
 import { ClientesPage } from './pages/ClientesPage'
 import { InventarioPage } from './pages/InventarioPage'
+import { PermisosPage } from './pages/PermisosPage'
 
 // Componente para rutas protegidas
 function ProtectedRoute({ children, requirePermission }: { children: React.ReactNode, requirePermission?: () => boolean }) {
@@ -74,22 +75,22 @@ function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         
         {/* Rutas protegidas */}
-        <Route 
-          path="/dashboard" 
+        <Route
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <DashboardPage />
             </ProtectedRoute>
-          } 
+          }
         />
 
-        <Route 
-          path="/inventario" 
+        <Route
+          path="/inventario"
           element={
-            <ProtectedRoute requirePermission={permissions.canAccessCanastillas}>
+            <ProtectedRoute requirePermission={permissions.canAccessInventario}>
               <InventarioPage />
             </ProtectedRoute>
-          } 
+          }
         />
         
         <Route 
@@ -119,24 +120,33 @@ function App() {
           } 
         />
         
-        <Route 
-          path="/usuarios" 
+        <Route
+          path="/usuarios"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission={permissions.canAccessUsuarios}>
               <UsuariosPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        
-        <Route 
-          path="/clientes" 
+
+        <Route
+          path="/clientes"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission={permissions.canAccessClientes}>
               <ClientesPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        
+
+        <Route
+          path="/permisos"
+          element={
+            <ProtectedRoute>
+              <PermisosPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Ruta 404 */}
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} />} />
       </Routes>

@@ -168,3 +168,68 @@ export interface CanastillaAttribute {
   created_at: string
   created_by?: string
 }
+
+// ========== PERMISOS POR PROCESOS ==========
+
+// Todos los permisos disponibles en el sistema
+export type PermissionKey =
+  // Dashboard
+  | 'dashboard.ver'
+  // Inventario
+  | 'inventario.ver'
+  | 'inventario.ver_todos'
+  // Traspasos
+  | 'traspasos.ver'
+  | 'traspasos.solicitar'
+  | 'traspasos.aprobar_rechazar'
+  | 'traspasos.cancelar'
+  | 'traspasos.ver_historial'
+  // Alquileres
+  | 'alquileres.ver'
+  | 'alquileres.crear'
+  | 'alquileres.procesar_retorno'
+  | 'alquileres.descargar_remision'
+  | 'alquileres.descargar_factura'
+  | 'alquileres.ver_configuracion'
+  // Canastillas
+  | 'canastillas.ver'
+  | 'canastillas.crear_lote'
+  | 'canastillas.editar'
+  | 'canastillas.dar_salida'
+  | 'canastillas.ver_qr'
+  // Clientes
+  | 'clientes.ver'
+  | 'clientes.crear'
+  | 'clientes.editar'
+  | 'clientes.activar_desactivar'
+  // Usuarios
+  | 'usuarios.ver'
+  | 'usuarios.crear'
+  | 'usuarios.cambiar_rol'
+  | 'usuarios.activar_desactivar'
+
+// Módulos del sistema (para agrupar permisos en la UI)
+export type PermissionModule =
+  | 'dashboard'
+  | 'inventario'
+  | 'traspasos'
+  | 'alquileres'
+  | 'canastillas'
+  | 'clientes'
+  | 'usuarios'
+
+// Estructura de un permiso en la base de datos
+export interface UserPermission {
+  id: string
+  user_id: string
+  permission_key: PermissionKey
+  is_granted: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Para actualizar permisos
+export interface PermissionUpdate {
+  permission_key: PermissionKey
+  is_granted: boolean
+}

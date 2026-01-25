@@ -34,6 +34,7 @@ export function SolicitarTraspasoModal({
   const [canastillasDisponibles, setCanastillasDisponibles] = useState<Canastilla[]>([])
   const [selectedCanastillas, setSelectedCanastillas] = useState<Set<string>>(new Set())
   const [lotes, setLotes] = useState<LoteItem[]>([])
+  const [canastillasRetenidas, setCanastillasRetenidas] = useState(0)
 
   const [formData, setFormData] = useState({
     to_user_id: '',
@@ -52,7 +53,30 @@ export function SolicitarTraspasoModal({
     try {
       if (!currentUser) return
 
-      // Obtener canastillas disponibles
+      // 1. Obtener IDs de canastillas que ya están en traspasos PENDIENTES del usuario actual
+      // Estas canastillas están "retenidas" y no deben poder usarse en nuevas solicitudes
+      const { data: traspasosPendientes, error: errorTraspasos } = await supabase
+        .from('transfers')
+        .select('id')
+        .eq('from_user_id', currentUser.id)
+        .eq('status', 'PENDIENTE')
+
+      let canastillasRetenidas: string[] = []
+
+      if (!errorTraspasos && traspasosPendientes && traspasosPendientes.length > 0) {
+        const transferIds = traspasosPendientes.map(t => t.id)
+
+        const { data: itemsRetenidos, error: errorItems } = await supabase
+          .from('transfer_items')
+          .select('canastilla_id')
+          .in('transfer_id', transferIds)
+
+        if (!errorItems && itemsRetenidos) {
+          canastillasRetenidas = itemsRetenidos.map(item => item.canastilla_id)
+        }
+      }
+
+      // 2. Obtener canastillas disponibles
       const { data: disponibles, error: errorDisponibles } = await supabase
         .from('canastillas')
         .select('*')
@@ -62,7 +86,7 @@ export function SolicitarTraspasoModal({
 
       if (errorDisponibles) throw errorDisponibles
 
-      // Obtener canastillas en alquiler INTERNO (estas sí se pueden traspasar)
+      // 3. Obtener canastillas en alquiler INTERNO (estas sí se pueden traspasar)
       const { data: enAlquiler, error: errorAlquiler } = await supabase
         .from('canastillas')
         .select('*')
@@ -100,13 +124,22 @@ export function SolicitarTraspasoModal({
         }
       }
 
-      // Combinar disponibles + alquiler interno
+      // 4. Combinar disponibles + alquiler interno
       const todasCanastillas = [...(disponibles || []), ...canastillasAlquilerInterno]
 
-      // Ordenar por código
-      todasCanastillas.sort((a, b) => a.codigo.localeCompare(b.codigo))
+      // 5. FILTRAR: Excluir canastillas que ya están en traspasos pendientes (retenidas)
+      const canastillasLibres = todasCanastillas.filter(
+        c => !canastillasRetenidas.includes(c.id)
+      )
 
-      setCanastillasDisponibles(todasCanastillas)
+      // Guardar cantidad de canastillas retenidas para mostrar mensaje informativo
+      const cantidadRetenidas = todasCanastillas.length - canastillasLibres.length
+      setCanastillasRetenidas(cantidadRetenidas)
+
+      // Ordenar por código
+      canastillasLibres.sort((a, b) => a.codigo.localeCompare(b.codigo))
+
+      setCanastillasDisponibles(canastillasLibres)
     } catch (error) {
       console.error('Error fetching canastillas:', error)
       setCanastillasDisponibles([])
@@ -208,6 +241,7 @@ export function SolicitarTraspasoModal({
     setSelectedCanastillas(new Set())
     setLotes([])
     setError('')
+    setCanastillasRetenidas(0)
     onClose()
   }
 
@@ -244,6 +278,20 @@ export function SolicitarTraspasoModal({
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-lg">
                   <p className="text-sm">{error}</p>
+                </div>
+              )}
+
+              {/* Mensaje de canastillas retenidas */}
+              {canastillasRetenidas > 0 && (
+                <div className="bg-amber-50 border-l-4 border-amber-500 text-amber-700 px-4 py-3 rounded-r-lg">
+                  <div className="flex items-start">
+                    <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-sm">
+                      <strong>{canastillasRetenidas}</strong> canastilla{canastillasRetenidas !== 1 ? 's' : ''} no disponible{canastillasRetenidas !== 1 ? 's' : ''} porque ya está{canastillasRetenidas !== 1 ? 'n' : ''} en solicitudes de traspaso pendientes.
+                    </p>
+                  </div>
                 </div>
               )}
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { LoadingSpinner } from './LoadingSpinner'
+import { useAuthStore } from '@/store/authStore'
 
 interface LoteItem {
   id: string
@@ -21,10 +22,21 @@ export function Inventario() {
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 20
+  const { user } = useAuthStore()
+
+  // Estadísticas de canastillas
+  const [totalCanastillas, setTotalCanastillas] = useState(0)
+  const [canastillasDisponibles, setCanastillasDisponibles] = useState(0)
+  const [canastillasEnTraspaso, setCanastillasEnTraspaso] = useState(0)
+
+  // Verificar si el usuario es super_admin
+  const isSuperAdmin = user?.role === 'super_admin'
 
   useEffect(() => {
-    cargarInventario()
-  }, [])
+    if (user) {
+      cargarInventario()
+    }
+  }, [user])
 
   useEffect(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
@@ -37,28 +49,87 @@ export function Inventario() {
       setLoading(true)
       setError(null)
 
-      // Obtener todas las canastillas
-      const { data: canastillas, error: canErr } = await supabase
+      if (!user) return
+
+      // 1. Obtener IDs de canastillas en traspasos PENDIENTES del usuario actual
+      let canastillasRetenidas: string[] = []
+
+      if (!isSuperAdmin) {
+        const { data: traspasosPendientes, error: errorTraspasos } = await supabase
+          .from('transfers')
+          .select('id')
+          .eq('from_user_id', user.id)
+          .eq('status', 'PENDIENTE')
+
+        if (!errorTraspasos && traspasosPendientes && traspasosPendientes.length > 0) {
+          const transferIds = traspasosPendientes.map(t => t.id)
+
+          const { data: itemsRetenidos, error: errorItems } = await supabase
+            .from('transfer_items')
+            .select('canastilla_id')
+            .in('transfer_id', transferIds)
+
+          if (!errorItems && itemsRetenidos) {
+            canastillasRetenidas = itemsRetenidos.map(item => item.canastilla_id)
+          }
+        }
+      }
+
+      // 2. Construir query base de canastillas
+      let canastillasQuery = supabase
         .from('canastillas')
         .select('*')
-        .order('codigo', { ascending: true })
+
+      // Si NO es super_admin, filtrar solo las canastillas del usuario actual
+      if (!isSuperAdmin) {
+        canastillasQuery = canastillasQuery.eq('current_owner_id', user.id)
+      }
+
+      const { data: canastillas, error: canErr } = await canastillasQuery.order('codigo', { ascending: true })
 
       if (canErr) throw canErr
 
-      // Obtener canastillas dadas de baja
-      const { data: bajas, error: bajasErr } = await supabase
-        .from('canastillas_bajas')
-        .select('*')
+      // 3. Calcular estadísticas
+      const todasLasCanastillas = canastillas || []
+      const totalCount = todasLasCanastillas.length
 
-      if (bajasErr) throw bajasErr
+      // Canastillas con status DISPONIBLE
+      const canastillasStatusDisponible = todasLasCanastillas.filter(c => c.status === 'DISPONIBLE')
 
-      // Agrupar por: color + tamaño + forma + condición + tipo_propiedad + estado
+      // De las disponibles, cuántas están retenidas en traspasos pendientes
+      const retenidasCount = canastillasStatusDisponible.filter(c =>
+        canastillasRetenidas.includes(c.id)
+      ).length
+
+      // Disponibles reales = status DISPONIBLE y NO retenidas
+      const disponiblesCount = canastillasStatusDisponible.length - retenidasCount
+
+      setTotalCanastillas(totalCount)
+      setCanastillasEnTraspaso(retenidasCount)
+      setCanastillasDisponibles(disponiblesCount)
+
+      // 4. Filtrar canastillas para lotes (solo las NO retenidas, con status DISPONIBLE)
+      const canastillasParaLotes = canastillasStatusDisponible.filter(c =>
+        !canastillasRetenidas.includes(c.id)
+      )
+
+      // 5. Obtener canastillas dadas de baja (solo para super_admin)
+      let bajas: any[] = []
+      if (isSuperAdmin) {
+        const { data: bajasData, error: bajasErr } = await supabase
+          .from('canastillas_bajas')
+          .select('*')
+
+        if (bajasErr) throw bajasErr
+        bajas = bajasData || []
+      }
+
+      // 6. Agrupar por: color + tamaño + forma + condición + tipo_propiedad
       const lotesMap = new Map<string, LoteItem>()
 
-      // PRIMERO: Procesar canastillas activas
-      canastillas?.forEach((c) => {
-        const estado = c.status
-        const key = `${c.color}|${c.size}|${c.shape || 'SIN_FORMA'}|${c.condition || 'SIN_CONDICION'}|${c.tipo_propiedad}|${estado}`
+      // PRIMERO: Procesar canastillas disponibles (no retenidas)
+      canastillasParaLotes.forEach((c) => {
+        const key = `${c.color}|${c.size}|${c.shape || 'SIN_FORMA'}|${c.condition || 'SIN_CONDICION'}|${c.tipo_propiedad}`
 
         if (!lotesMap.has(key)) {
           lotesMap.set(key, {
@@ -68,7 +139,7 @@ export function Inventario() {
             shape: c.shape || undefined,
             condition: c.condition || undefined,
             tipoPropiedad: c.tipo_propiedad,
-            estado: estado,
+            estado: 'DISPONIBLE',
             cantidad: 0,
             canastillas: [],
           })
@@ -105,26 +176,20 @@ export function Inventario() {
 
       // Convertir a array y ordenar
       let lotesArray: LoteItem[] = Array.from(lotesMap.values()).sort((a, b) => {
+        // Primero ordenar por tipo de propiedad
         if (a.tipoPropiedad !== b.tipoPropiedad) {
           return a.tipoPropiedad === 'PROPIA' ? -1 : 1
         }
+        // Luego por color
         if (a.color !== b.color) {
           return a.color.localeCompare(b.color)
         }
+        // Luego por tamaño
         if (a.size !== b.size) {
           return a.size.localeCompare(b.size)
         }
-        const estadoOrder: Record<string, number> = {
-          'DISPONIBLE': 1,
-          'EN_ALQUILER': 2,
-          'EN_LAVADO': 3,
-          'EN_USO_INTERNO': 4,
-          'EN_REPARACION': 5,
-          'FUERA_SERVICIO': 6,
-          'EXTRAVIADA': 7,
-          'DADA_DE_BAJA': 8,
-        }
-        return (estadoOrder[a.estado] || 9) - (estadoOrder[b.estado] || 9)
+        // Finalmente por cantidad (mayor primero)
+        return b.cantidad - a.cantidad
       })
 
       setLotes(lotesArray)
@@ -173,17 +238,13 @@ export function Inventario() {
     return tipo === 'PROPIA' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
   }
 
-  // CALCULAR ESTADÍSTICAS
-  const propias = lotes
-    .filter(l => l.tipoPropiedad === 'PROPIA' && l.estado !== 'DADA_DE_BAJA')
-    .reduce((sum, l) => sum + l.cantidad, 0)
-  const alquiladas = lotes
-    .filter(l => l.tipoPropiedad === 'ALQUILADA' && l.estado !== 'DADA_DE_BAJA')
+  // CALCULAR ESTADÍSTICAS DE LOTES
+  const totalEnLotes = lotes
+    .filter(l => l.estado !== 'DADA_DE_BAJA')
     .reduce((sum, l) => sum + l.cantidad, 0)
   const enDestruccion = lotes
     .filter(l => l.estado === 'DADA_DE_BAJA')
     .reduce((sum, l) => sum + l.cantidad, 0)
-  const totalActivas = propias + alquiladas
 
   const totalPages = Math.ceil(lotes.length / itemsPerPage)
 
@@ -193,9 +254,14 @@ export function Inventario() {
     <div className="space-y-6">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Inventario Detallado</h1>
+        <h1 className="text-3xl font-bold text-gray-900">
+          {isSuperAdmin ? 'Inventario General' : 'Mi Inventario'}
+        </h1>
         <p className="text-gray-500 mt-2">
-          Lotes agrupados por características, tipo de propiedad y estado
+          {isSuperAdmin
+            ? 'Todas las canastillas del sistema agrupadas por características'
+            : 'Tus canastillas agrupadas por características, tipo de propiedad y estado'
+          }
         </p>
       </div>
 
@@ -207,39 +273,44 @@ export function Inventario() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 ${isSuperAdmin ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
         <div className="p-6 rounded-lg border bg-blue-50 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">Total Activas</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{totalActivas}</p>
+            <p className="text-gray-600 text-sm font-medium">Total Canastillas</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{totalCanastillas}</p>
+            <p className="text-xs text-gray-500 mt-1">En tu inventario</p>
           </div>
         </div>
         <div className="p-6 rounded-lg border bg-green-50 border-green-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">Propias</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{propias}</p>
+            <p className="text-gray-600 text-sm font-medium">Disponibles</p>
+            <p className="text-3xl font-bold text-green-600 mt-2">{canastillasDisponibles}</p>
+            <p className="text-xs text-gray-500 mt-1">Libres para usar</p>
           </div>
         </div>
         <div className="p-6 rounded-lg border bg-amber-50 border-amber-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">Alquiladas</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{alquiladas}</p>
+            <p className="text-gray-600 text-sm font-medium">En Traspaso</p>
+            <p className="text-3xl font-bold text-amber-600 mt-2">{canastillasEnTraspaso}</p>
+            <p className="text-xs text-gray-500 mt-1">Solicitudes pendientes</p>
           </div>
         </div>
-        <div className="p-6 rounded-lg border bg-gray-300 border-gray-500 shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <p className="text-gray-700 text-sm font-medium">En Destrucción</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{enDestruccion}</p>
+        {isSuperAdmin && (
+          <div className="p-6 rounded-lg border bg-gray-300 border-gray-500 shadow-sm hover:shadow-md transition-shadow">
+            <div>
+              <p className="text-gray-700 text-sm font-medium">En Destrucción</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{enDestruccion}</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Tabla de Lotes */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Lotes</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Lotes Disponibles</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {lotes.length} lotes totales ({totalActivas} canastillas activas)
+            {lotes.length} lotes ({totalEnLotes} canastillas disponibles para usar)
           </p>
         </div>
 
@@ -252,7 +323,6 @@ export function Inventario() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Tamaño</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Forma</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Condición</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Estado</th>
                 <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Cantidad</th>
               </tr>
             </thead>
@@ -285,11 +355,6 @@ export function Inventario() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-gray-700">{lote.condition || '-'}</span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getEstadoColor(lote.estado)}`}>
-                        {getEstadoLabel(lote.estado)}
-                      </span>
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800">
                         {lote.cantidad}
@@ -299,7 +364,7 @@ export function Inventario() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     <div className="flex flex-col items-center">
                       <svg className="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />

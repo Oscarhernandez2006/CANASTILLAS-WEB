@@ -6,6 +6,7 @@ import { Input } from '@/components/Input'
 export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -17,7 +18,7 @@ export function LoginPage() {
     setLoading(true)
 
     try {
-      await signIn(email, password)
+      await signIn(email, password, rememberMe)
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión')
     } finally {
@@ -138,8 +139,13 @@ export function LoginPage() {
               />
 
               <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center">
-                  <input type="checkbox" className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500" />
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                  />
                   <span className="ml-2 text-gray-600">Recordarme</span>
                 </label>
                 <a href="/forgot-password" className="text-primary-600 hover:text-primary-700 font-medium">

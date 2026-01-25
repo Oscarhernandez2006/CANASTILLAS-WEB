@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/authStore'
 
 interface DashboardStats {
   totalCanastillas: number
@@ -15,6 +16,9 @@ interface DashboardStats {
 }
 
 export function useDashboardStats() {
+  const { user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
+
   const [stats, setStats] = useState<DashboardStats>({
     totalCanastillas: 0,
     disponibles: 0,
@@ -29,15 +33,26 @@ export function useDashboardStats() {
   })
 
   useEffect(() => {
-    fetchStats()
-  }, [])
+    if (user) {
+      fetchStats()
+    }
+  }, [user])
 
   const fetchStats = async () => {
     try {
-      // Obtener todas las canastillas
-      const { data: canastillas, error } = await supabase
+      if (!user) return
+
+      // Construir query base
+      let query = supabase
         .from('canastillas')
-        .select('status')
+        .select('id, status, current_owner_id')
+
+      // Si NO es super_admin, filtrar solo las canastillas del usuario actual
+      if (!isSuperAdmin) {
+        query = query.eq('current_owner_id', user.id)
+      }
+
+      const { data: canastillas, error } = await query
 
       if (error) throw error
 
@@ -62,7 +77,11 @@ export function useDashboardStats() {
 
         if (!rentalsError && rentals) {
           rentals.forEach(rental => {
-            const count = rental.rental_items?.length || 0
+            // Filtrar solo los items que pertenecen a las canastillas del usuario
+            const itemsDelUsuario = rental.rental_items?.filter(
+              (item: any) => canastillasEnAlquiler.includes(item.canastilla_id)
+            ) || []
+            const count = itemsDelUsuario.length
             if (rental.rental_type === 'INTERNO') {
               enAlquilerInterno += count
             } else {
