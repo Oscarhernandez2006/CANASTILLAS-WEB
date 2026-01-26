@@ -116,7 +116,7 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
         estimatedDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)))
       }
 
-      // 3. Crear el alquiler con número de remisión
+      // 3. Crear el alquiler con número de remisión e inicializar contadores
       const { data: rental, error: rentalError } = await supabase
         .from('rentals')
         .insert([{
@@ -130,6 +130,10 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
           created_by: user.id,
           remision_number: remisionNumber,
           remision_generated_at: new Date().toISOString(),
+          // Inicializar contadores para devoluciones parciales
+          pending_items_count: canastillaIds.length,
+          returned_items_count: 0,
+          total_invoiced: 0,
         }])
         .select()
         .single()

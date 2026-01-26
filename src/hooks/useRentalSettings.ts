@@ -47,10 +47,53 @@ export function useRentalSettings() {
     }
   }
 
+  const updateInternalRate = async (newRate: number, userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('rental_settings')
+        .update({
+          internal_rate: newRate,
+          updated_at: new Date().toISOString(),
+          updated_by: userId
+        })
+        .eq('id', settings?.id)
+
+      if (error) throw error
+      await fetchSettings()
+      return true
+    } catch (error) {
+      console.error('Error updating internal rate:', error)
+      return false
+    }
+  }
+
+  const updateSettings = async (dailyRate: number, internalRate: number, userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('rental_settings')
+        .update({
+          daily_rate: dailyRate,
+          internal_rate: internalRate,
+          updated_at: new Date().toISOString(),
+          updated_by: userId
+        })
+        .eq('id', settings?.id)
+
+      if (error) throw error
+      await fetchSettings()
+      return { success: true }
+    } catch (error: any) {
+      console.error('Error updating settings:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
   return {
     settings,
     loading,
     updateDailyRate,
+    updateInternalRate,
+    updateSettings,
     refreshSettings: fetchSettings
   }
 }

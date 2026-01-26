@@ -28,6 +28,7 @@ export function Inventario() {
   const [totalCanastillas, setTotalCanastillas] = useState(0)
   const [canastillasDisponibles, setCanastillasDisponibles] = useState(0)
   const [canastillasEnTraspaso, setCanastillasEnTraspaso] = useState(0)
+  const [canastillasEnLavado, setCanastillasEnLavado] = useState(0)
 
   // Verificar si el usuario es super_admin
   const isSuperAdmin = user?.role === 'super_admin'
@@ -96,6 +97,10 @@ export function Inventario() {
       // Canastillas con status DISPONIBLE
       const canastillasStatusDisponible = todasLasCanastillas.filter(c => c.status === 'DISPONIBLE')
 
+      // Canastillas con status EN_LAVADO
+      const canastillasStatusLavado = todasLasCanastillas.filter(c => c.status === 'EN_LAVADO')
+      const enLavadoCount = canastillasStatusLavado.length
+
       // De las disponibles, cuántas están retenidas en traspasos pendientes
       const retenidasCount = canastillasStatusDisponible.filter(c =>
         canastillasRetenidas.includes(c.id)
@@ -107,6 +112,7 @@ export function Inventario() {
       setTotalCanastillas(totalCount)
       setCanastillasEnTraspaso(retenidasCount)
       setCanastillasDisponibles(disponiblesCount)
+      setCanastillasEnLavado(enLavadoCount)
 
       // 4. Filtrar canastillas para lotes (solo las NO retenidas, con status DISPONIBLE)
       const canastillasParaLotes = canastillasStatusDisponible.filter(c =>
@@ -273,7 +279,7 @@ export function Inventario() {
       )}
 
       {/* Stats Cards */}
-      <div className={`grid grid-cols-2 ${isSuperAdmin ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
+      <div className={`grid grid-cols-2 ${isSuperAdmin ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
         <div className="p-6 rounded-lg border bg-blue-50 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
             <p className="text-gray-600 text-sm font-medium">Total Canastillas</p>
@@ -293,6 +299,13 @@ export function Inventario() {
             <p className="text-gray-600 text-sm font-medium">En Traspaso</p>
             <p className="text-3xl font-bold text-amber-600 mt-2">{canastillasEnTraspaso}</p>
             <p className="text-xs text-gray-500 mt-1">Solicitudes pendientes</p>
+          </div>
+        </div>
+        <div className="p-6 rounded-lg border bg-cyan-50 border-cyan-200 shadow-sm hover:shadow-md transition-shadow">
+          <div>
+            <p className="text-gray-600 text-sm font-medium">En Lavado</p>
+            <p className="text-3xl font-bold text-cyan-600 mt-2">{canastillasEnLavado}</p>
+            <p className="text-xs text-gray-500 mt-1">En proceso de lavado</p>
           </div>
         </div>
         {isSuperAdmin && (

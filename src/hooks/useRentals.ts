@@ -15,14 +15,27 @@ export function useRentals() {
     try {
       setLoading(true)
 
-      // Alquileres activos
+      // Alquileres activos - incluye campos de devoluciones parciales y rental_returns
       const { data: activeData, error: activeError } = await supabase
         .from('rentals')
         .select(`
           *,
           sale_point:sale_points(*),
           rental_items(
+            id,
             canastilla:canastillas(*)
+          ),
+          rental_returns(
+            id,
+            return_date,
+            days_charged,
+            amount,
+            invoice_number,
+            notes,
+            created_at,
+            rental_return_items(
+              canastilla:canastillas(id, codigo, size, color)
+            )
           )
         `)
         .eq('status', 'ACTIVO')
@@ -30,14 +43,27 @@ export function useRentals() {
 
       if (activeError) throw activeError
 
-      // Alquileres completados
+      // Alquileres completados - incluye historial de devoluciones
       const { data: completedData, error: completedError } = await supabase
         .from('rentals')
         .select(`
           *,
           sale_point:sale_points(*),
           rental_items(
+            id,
             canastilla:canastillas(*)
+          ),
+          rental_returns(
+            id,
+            return_date,
+            days_charged,
+            amount,
+            invoice_number,
+            notes,
+            created_at,
+            rental_return_items(
+              canastilla:canastillas(id, codigo, size, color)
+            )
           )
         `)
         .in('status', ['RETORNADO', 'VENCIDO', 'PERDIDO'])

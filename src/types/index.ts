@@ -75,6 +75,14 @@ export interface SalePoint {
   created_at: string
 }
 
+export interface RentalItem {
+  id: string
+  rental_id: string
+  canastilla_id: string
+  canastilla: Canastilla
+  created_at: string
+}
+
 export interface Rental {
   id: string
   sale_point_id: string
@@ -92,10 +100,14 @@ export interface Rental {
   remision_generated_at: string | null
   created_by: string
   created_at: string
+  // Campos para devoluciones parciales
+  pending_items_count?: number
+  returned_items_count?: number
+  total_invoiced?: number
+  // Relaciones
   sale_point?: SalePoint
-  rental_items?: Array<{
-    canastilla: Canastilla
-  }>
+  rental_items?: RentalItem[]
+  rental_returns?: RentalReturn[]
 }
 
 export interface RentalSettings {
@@ -169,6 +181,113 @@ export interface CanastillaAttribute {
   created_by?: string
 }
 
+// ========== MÓDULO DE TRASPASOS ==========
+
+export type TransferStatus = 'PENDIENTE' | 'ACEPTADO' | 'RECHAZADO' | 'CANCELADO'
+
+export interface Transfer {
+  id: string
+  from_user_id: string
+  from_user?: User
+  to_user_id: string
+  to_user?: User
+  status: TransferStatus
+  notes?: string
+  rejection_reason?: string
+  remision_number?: string
+  remision_generated_at?: string
+  requested_at: string
+  processed_at?: string
+  created_at: string
+  updated_at: string
+  transfer_items?: TransferItem[]
+}
+
+export interface TransferItem {
+  id: string
+  transfer_id: string
+  canastilla_id: string
+  canastilla?: Canastilla
+  created_at: string
+}
+
+// ========== MÓDULO DE DEVOLUCIONES PARCIALES ==========
+
+export interface RentalReturn {
+  id: string
+  rental_id: string
+  return_date: string
+  days_charged: number
+  amount: number
+  invoice_number: string
+  notes?: string
+  processed_by: string
+  processed_by_user?: User
+  created_at: string
+  rental_return_items?: RentalReturnItem[]
+}
+
+export interface RentalReturnItem {
+  id: string
+  rental_return_id: string
+  canastilla_id: string
+  rental_item_id?: string
+  canastilla?: Canastilla
+  created_at: string
+}
+
+// Rental extendido con campos de devoluciones parciales
+export interface RentalWithReturns extends Rental {
+  pending_items_count: number
+  returned_items_count: number
+  total_invoiced: number
+  rental_returns?: RentalReturn[]
+}
+
+// ========== MÓDULO DE LAVADO ==========
+
+export type WashingOrderStatus =
+  | 'ENVIADO'
+  | 'RECIBIDO'
+  | 'LAVADO_COMPLETADO'
+  | 'ENTREGADO'
+  | 'CONFIRMADO'
+  | 'CANCELADO'
+
+export type WashingItemStatus = 'PENDIENTE' | 'LAVADA' | 'DANADA'
+
+export interface WashingOrder {
+  id: string
+  sender_user_id: string
+  sender_user?: User
+  washing_staff_id?: string
+  washing_staff?: User
+  status: WashingOrderStatus
+  notes?: string
+  remision_entrega_number?: string
+  remision_devolucion_number?: string
+  sent_at: string
+  received_at?: string
+  washed_at?: string
+  delivered_at?: string
+  confirmed_at?: string
+  cancelled_at?: string
+  cancellation_reason?: string
+  created_at: string
+  updated_at: string
+  washing_items?: WashingOrderItem[]
+}
+
+export interface WashingOrderItem {
+  id: string
+  washing_order_id: string
+  canastilla_id: string
+  canastilla?: Canastilla
+  item_status: WashingItemStatus
+  notes?: string
+  created_at: string
+}
+
 // ========== PERMISOS POR PROCESOS ==========
 
 // Todos los permisos disponibles en el sistema
@@ -191,6 +310,7 @@ export type PermissionKey =
   | 'alquileres.descargar_remision'
   | 'alquileres.descargar_factura'
   | 'alquileres.ver_configuracion'
+  | 'alquileres.editar_configuracion'
   // Canastillas
   | 'canastillas.ver'
   | 'canastillas.crear_lote'
@@ -207,6 +327,15 @@ export type PermissionKey =
   | 'usuarios.crear'
   | 'usuarios.cambiar_rol'
   | 'usuarios.activar_desactivar'
+  // Lavado
+  | 'lavado.ver'
+  | 'lavado.enviar'
+  | 'lavado.recibir'
+  | 'lavado.marcar_completado'
+  | 'lavado.entregar'
+  | 'lavado.confirmar_recepcion'
+  | 'lavado.cancelar'
+  | 'lavado.descargar_remision'
 
 // Módulos del sistema (para agrupar permisos en la UI)
 export type PermissionModule =
@@ -217,6 +346,7 @@ export type PermissionModule =
   | 'canastillas'
   | 'clientes'
   | 'usuarios'
+  | 'lavado'
 
 // Estructura de un permiso en la base de datos
 export interface UserPermission {

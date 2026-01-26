@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useInventarioContext } from '@/context/InventarioContext'
+import { useState, useRef, useEffect } from 'react'
 
 interface DynamicSelectProps {
   label: string
@@ -9,7 +8,6 @@ interface DynamicSelectProps {
   onAddNew: (value: string) => void
   required?: boolean
   placeholder?: string
-  tipoAtributo?: 'COLOR' | 'SIZE' | 'FORMA' | 'CONDICION' | 'UBICACION' | 'AREA'
 }
 
 export function DynamicSelect({
@@ -20,21 +18,28 @@ export function DynamicSelect({
   onAddNew,
   required,
   placeholder,
-  tipoAtributo,
 }: DynamicSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [newValue, setNewValue] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Usar contexto - pero con try/catch para cuando no esté disponible
-  let inventarioContext: any = null
-  try {
-    inventarioContext = useInventarioContext()
-  } catch {
-    // El contexto no está disponible
-  }
+  // Cerrar dropdown cuando se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+        setShowAddForm(false)
+        setNewValue('')
+        setError(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleAddNew = async () => {
     if (!newValue.trim()) {
@@ -43,7 +48,7 @@ export function DynamicSelect({
     }
 
     // Validar que no exista ya
-    if (options.includes(newValue)) {
+    if (options.includes(newValue.trim())) {
       setError('Este valor ya existe')
       return
     }
@@ -52,33 +57,9 @@ export function DynamicSelect({
       setLoading(true)
       setError(null)
 
-      await onAddNew(newValue)
+      await onAddNew(newValue.trim())
 
-      // Notificar al contexto si está disponible
-      if (tipoAtributo && inventarioContext) {
-        switch (tipoAtributo) {
-          case 'COLOR':
-            inventarioContext.agregarColor(newValue)
-            break
-          case 'SIZE':
-            inventarioContext.agregarTamano(newValue)
-            break
-          case 'FORMA':
-            inventarioContext.agregarForma(newValue)
-            break
-          case 'CONDICION':
-            inventarioContext.agregarCondicion(newValue)
-            break
-          case 'UBICACION':
-            inventarioContext.agregarUbicacion(newValue)
-            break
-          case 'AREA':
-            inventarioContext.agregarArea(newValue)
-            break
-        }
-      }
-
-      onChange(newValue)
+      onChange(newValue.trim())
       setNewValue('')
       setShowAddForm(false)
       setIsOpen(false)
@@ -108,43 +89,51 @@ export function DynamicSelect({
     setError(null)
   }
 
+  const handleSelect = (option: string) => {
+    onChange(option)
+    setIsOpen(false)
+    setShowAddForm(false)
+  }
+
   return (
-    <div>
+    <div ref={containerRef}>
       <label className="block text-sm font-medium text-gray-700 mb-2">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
 
       <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value)
-            setIsOpen(false)
-          }}
-          onFocus={() => setIsOpen(true)}
-          onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
-          required={required}
+        {/* Botón que abre el dropdown (reemplaza el select nativo) */}
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-full px-4 py-2 border rounded-lg text-left bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 flex items-center justify-between ${
+            isOpen ? 'border-primary-500 ring-2 ring-primary-500' : 'border-gray-300'
+          }`}
         >
-          <option value="">{placeholder || 'Seleccionar...'}</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-
-        {/* Dropdown Icon */}
-        <div className="absolute right-3 top-2.5 pointer-events-none">
+          <span className={value ? 'text-gray-900' : 'text-gray-400'}>
+            {value || placeholder || 'Seleccionar...'}
+          </span>
           <svg
             className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
-        </div>
+        </button>
+
+        {/* Input oculto para validación de formulario */}
+        {required && (
+          <input
+            type="text"
+            value={value}
+            required
+            onChange={() => {}}
+            className="sr-only"
+            tabIndex={-1}
+          />
+        )}
 
         {/* Dropdown Menu */}
         {isOpen && (
@@ -156,17 +145,18 @@ export function DynamicSelect({
                   <button
                     key={option}
                     type="button"
-                    onClick={() => {
-                      onChange(option)
-                      setIsOpen(false)
-                    }}
-                    className="w-full text-left px-4 py-2 hover:bg-primary-50 text-sm text-gray-700 transition-colors"
+                    onClick={() => handleSelect(option)}
+                    className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                      option === value
+                        ? 'bg-primary-100 text-primary-700 font-medium'
+                        : 'text-gray-700 hover:bg-primary-50'
+                    }`}
                   >
                     {option}
                   </button>
                 ))
               ) : (
-                <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                <div className="px-4 py-3 text-sm text-gray-500 text-center">
                   No hay opciones disponibles
                 </div>
               )}
@@ -176,9 +166,12 @@ export function DynamicSelect({
             <button
               type="button"
               onClick={() => setShowAddForm(!showAddForm)}
-              className="w-full text-left px-4 py-2 border-t border-gray-200 text-primary-600 hover:bg-primary-50 text-sm font-medium transition-colors"
+              className="w-full text-left px-4 py-2 border-t border-gray-200 text-primary-600 hover:bg-primary-50 text-sm font-medium transition-colors flex items-center gap-2"
             >
-              + Agregar nuevo {label.toLowerCase()}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Agregar nuevo {label.toLowerCase()}
             </button>
 
             {/* Add Form */}
@@ -206,7 +199,7 @@ export function DynamicSelect({
                     type="button"
                     onClick={handleAddNew}
                     disabled={loading || !newValue.trim()}
-                    className="flex-1 px-3 py-1 bg-primary-600 text-white rounded text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {loading ? 'Agregando...' : 'Agregar'}
                   </button>
@@ -214,7 +207,7 @@ export function DynamicSelect({
                     type="button"
                     onClick={handleCancelForm}
                     disabled={loading}
-                    className="flex-1 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex-1 px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Cancelar
                   </button>

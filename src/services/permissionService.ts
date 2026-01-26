@@ -40,6 +40,7 @@ export const PERMISSIONS_CONFIG: Record<PermissionModule, {
       { key: 'alquileres.descargar_remision', label: 'Descargar Remisión', description: 'Descargar remisiones en PDF' },
       { key: 'alquileres.descargar_factura', label: 'Descargar Factura', description: 'Descargar facturas en PDF' },
       { key: 'alquileres.ver_configuracion', label: 'Ver Configuración', description: 'Ver configuración de tarifas' },
+      { key: 'alquileres.editar_configuracion', label: 'Editar Tarifas', description: 'Modificar las tarifas de alquiler (diaria e interna)' },
     ],
   },
   canastillas: {
@@ -70,6 +71,19 @@ export const PERMISSIONS_CONFIG: Record<PermissionModule, {
       { key: 'usuarios.activar_desactivar', label: 'Activar/Desactivar', description: 'Activar o desactivar usuarios' },
     ],
   },
+  lavado: {
+    label: 'Lavado',
+    permissions: [
+      { key: 'lavado.ver', label: 'Ver Lavado', description: 'Acceder al módulo de lavado de canastillas' },
+      { key: 'lavado.enviar', label: 'Enviar a Lavado', description: 'Enviar canastillas al personal de lavado' },
+      { key: 'lavado.recibir', label: 'Recibir Canastillas', description: 'Confirmar recepción de canastillas (personal de lavado)' },
+      { key: 'lavado.marcar_completado', label: 'Marcar Completado', description: 'Marcar el lavado como completado (personal de lavado)' },
+      { key: 'lavado.entregar', label: 'Entregar Canastillas', description: 'Entregar canastillas lavadas al usuario (personal de lavado)' },
+      { key: 'lavado.confirmar_recepcion', label: 'Confirmar Recepción', description: 'Confirmar recepción de canastillas lavadas' },
+      { key: 'lavado.cancelar', label: 'Cancelar Orden', description: 'Cancelar órdenes de lavado pendientes' },
+      { key: 'lavado.descargar_remision', label: 'Descargar Remisión', description: 'Descargar remisiones de lavado en PDF' },
+    ],
+  },
 }
 
 // Lista de todos los módulos en orden
@@ -81,6 +95,7 @@ export const ALL_MODULES: PermissionModule[] = [
   'canastillas',
   'clientes',
   'usuarios',
+  'lavado',
 ]
 
 // Lista de todas las claves de permisos

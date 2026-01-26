@@ -6,6 +6,8 @@ import { useTraspasos } from '@/hooks/useTraspasos'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/utils/helpers'
+import { openRemisionTraspasoPDF } from '@/utils/remisionTraspasoGenerator'
+import type { Transfer } from '@/types'
 
 type TabType = 'solicitudes-recibidas' | 'solicitudes-enviadas' | 'historial'
 
@@ -26,38 +28,80 @@ export function TraspasosPage() {
     if (!confirm('¿Aprobar este traspaso?')) return
 
     try {
+      const now = new Date().toISOString()
+
+      // Actualizar el estado a ACEPTADO (la remisión ya fue generada al crear la solicitud)
       const { error } = await supabase
         .from('transfers')
-        .update({ 
+        .update({
           status: 'ACEPTADO',
-          responded_at: new Date().toISOString()
+          responded_at: now,
+          processed_at: now
         })
         .eq('id', id)
 
       if (error) throw error
 
+      // Obtener el transfer completo con items y usuarios
       const { data: transfer } = await supabase
         .from('transfers')
-        .select('*, transfer_items(*)')
+        .select(`
+          *,
+          from_user:users!transfers_from_user_id_fkey(*),
+          to_user:users!transfers_to_user_id_fkey(*),
+          transfer_items(
+            *,
+            canastilla:canastillas(*)
+          )
+        `)
         .eq('id', id)
         .single()
 
       if (transfer) {
         const canastillaIds = transfer.transfer_items.map((item: any) => item.canastilla_id)
-        
+
+        // Cambiar el propietario de las canastillas
         await supabase
           .from('canastillas')
-          .update({ 
+          .update({
             current_owner_id: transfer.to_user_id,
             status: 'DISPONIBLE'
           })
           .in('id', canastillaIds)
+
+        // Abrir la remisión PDF
+        await openRemisionTraspasoPDF(transfer as unknown as Transfer)
       }
 
-      alert('✅ Traspaso aprobado exitosamente')
+      alert('✅ Traspaso aprobado exitosamente. Remisión: ' + (transfer?.remision_number || ''))
       refreshTraspasos()
     } catch (error: any) {
       alert('❌ Error: ' + error.message)
+    }
+  }
+
+  const handleVerRemision = async (transfer: any) => {
+    try {
+      // Obtener el transfer completo si no tiene todos los datos
+      const { data: fullTransfer } = await supabase
+        .from('transfers')
+        .select(`
+          *,
+          from_user:users!transfers_from_user_id_fkey(*),
+          to_user:users!transfers_to_user_id_fkey(*),
+          transfer_items(
+            *,
+            canastilla:canastillas(*)
+          )
+        `)
+        .eq('id', transfer.id)
+        .single()
+
+      if (fullTransfer) {
+        await openRemisionTraspasoPDF(fullTransfer as unknown as Transfer)
+      }
+    } catch (error: any) {
+      alert('❌ Error al generar la remisión: ' + error.message)
     }
   }
 
@@ -218,6 +262,11 @@ export function TraspasosPage() {
                           <div className="text-sm text-gray-500">
                             {solicitud.from_user?.email}
                           </div>
+                          {solicitud.remision_number && (
+                            <div className="text-xs text-purple-600 font-medium mt-1">
+                              {solicitud.remision_number}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
@@ -233,22 +282,35 @@ export function TraspasosPage() {
                           {getStatusBadge(solicitud.status)}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {solicitud.status === 'PENDIENTE' && (
-                            <div className="flex justify-end space-x-2">
+                          <div className="flex justify-end space-x-2">
+                            {solicitud.remision_number && (
                               <button
-                                onClick={() => handleAprobar(solicitud.id)}
-                                className="text-green-600 hover:text-green-900 font-medium"
+                                onClick={() => handleVerRemision(solicitud)}
+                                className="inline-flex items-center text-purple-600 hover:text-purple-900 font-medium text-sm"
                               >
-                                Aprobar
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Remisión
                               </button>
-                              <button
-                                onClick={() => handleRechazar(solicitud.id)}
-                                className="text-red-600 hover:text-red-900 font-medium"
-                              >
-                                Rechazar
-                              </button>
-                            </div>
-                          )}
+                            )}
+                            {solicitud.status === 'PENDIENTE' && (
+                              <>
+                                <button
+                                  onClick={() => handleAprobar(solicitud.id)}
+                                  className="text-green-600 hover:text-green-900 font-medium"
+                                >
+                                  Aprobar
+                                </button>
+                                <button
+                                  onClick={() => handleRechazar(solicitud.id)}
+                                  className="text-red-600 hover:text-red-900 font-medium"
+                                >
+                                  Rechazar
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -298,6 +360,11 @@ export function TraspasosPage() {
                           <div className="text-sm text-gray-500">
                             {solicitud.to_user?.email}
                           </div>
+                          {solicitud.remision_number && (
+                            <div className="text-xs text-purple-600 font-medium mt-1">
+                              {solicitud.remision_number}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
@@ -313,14 +380,27 @@ export function TraspasosPage() {
                           {getStatusBadge(solicitud.status)}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {solicitud.status === 'PENDIENTE' && (
-                            <button
-                              onClick={() => handleCancelar(solicitud.id)}
-                              className="text-red-600 hover:text-red-900 font-medium"
-                            >
-                              Cancelar
-                            </button>
-                          )}
+                          <div className="flex justify-end space-x-2">
+                            {solicitud.remision_number && (
+                              <button
+                                onClick={() => handleVerRemision(solicitud)}
+                                className="inline-flex items-center text-purple-600 hover:text-purple-900 font-medium text-sm"
+                              >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Remisión
+                              </button>
+                            )}
+                            {solicitud.status === 'PENDIENTE' && (
+                              <button
+                                onClick={() => handleCancelar(solicitud.id)}
+                                className="text-red-600 hover:text-red-900 font-medium"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -357,6 +437,7 @@ export function TraspasosPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Canastillas</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -372,6 +453,11 @@ export function TraspasosPage() {
                               {item.to_user?.first_name} {item.to_user?.last_name}
                             </span>
                           </div>
+                          {item.remision_number && (
+                            <div className="text-xs text-purple-600 font-medium mt-1">
+                              {item.remision_number}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
@@ -385,6 +471,19 @@ export function TraspasosPage() {
                         </td>
                         <td className="px-6 py-4">
                           {getStatusBadge(item.status)}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {item.status === 'ACEPTADO' && item.remision_number && (
+                            <button
+                              onClick={() => handleVerRemision(item)}
+                              className="inline-flex items-center text-purple-600 hover:text-purple-900 font-medium text-sm"
+                            >
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Ver Remisión
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

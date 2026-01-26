@@ -85,6 +85,12 @@ export function usePermissions() {
     return hasPermission('usuarios.ver')
   }, [hasPermission])
 
+  const canAccessLavado = useCallback((): boolean => {
+    // Personal de lavado siempre tiene acceso al módulo
+    if (user?.role === 'washing_staff') return true
+    return hasPermission('lavado.ver')
+  }, [hasPermission, user])
+
   // ========== COMPATIBILIDAD CON CÓDIGO EXISTENTE ==========
 
   // Para el Sidebar - acceso a canastillas o inventario
@@ -126,6 +132,7 @@ export function usePermissions() {
     canAccessCanastillas,
     canAccessClientes,
     canAccessUsuarios,
+    canAccessLavado,
 
     // Compatibilidad
     canAccessCanastillasMenu,

@@ -3,7 +3,8 @@ import { Button } from './Button'
 import { CanastillaLoteSelector } from './CanastillaLoteSelector'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import type { User, Canastilla } from '@/types'
+import { openRemisionTraspasoPDF } from '@/utils/remisionTraspasoGenerator'
+import type { User, Canastilla, Transfer } from '@/types'
 
 interface LoteItem {
   id: string
@@ -186,8 +187,16 @@ export function SolicitarTraspasoModal({
       if (selectedCanastillas.size === 0) throw new Error('Selecciona al menos una canastilla')
 
       const canastillaIds = Array.from(selectedCanastillas)
+      const now = new Date().toISOString()
 
-      // 1. Crear el traspaso
+      // 1. Generar número de remisión
+      const { data: remisionData, error: remisionError } = await supabase
+        .rpc('generate_transfer_remision_number')
+
+      if (remisionError) throw remisionError
+      const remisionNumber = remisionData as string
+
+      // 2. Crear el traspaso con número de remisión
       const { data: transfer, error: transferError } = await supabase
         .from('transfers')
         .insert([{
@@ -196,13 +205,15 @@ export function SolicitarTraspasoModal({
           status: 'PENDIENTE',
           reason: formData.reason,
           notes: formData.notes,
+          remision_number: remisionNumber,
+          remision_generated_at: now,
         }])
         .select()
         .single()
 
       if (transferError) throw transferError
 
-      // 2. Insertar las canastillas del traspaso
+      // 3. Insertar las canastillas del traspaso
       const transferItems = canastillaIds.map(canastillaId => ({
         transfer_id: transfer.id,
         canastilla_id: canastillaId,
@@ -214,7 +225,7 @@ export function SolicitarTraspasoModal({
 
       if (itemsError) throw itemsError
 
-      // 3. Crear notificación
+      // 4. Crear notificación
       await supabase
         .from('notifications')
         .insert([{
@@ -225,7 +236,27 @@ export function SolicitarTraspasoModal({
           related_id: transfer.id
         }])
 
-      alert('✅ Traspaso creado exitosamente')
+      // 5. Obtener datos completos para generar el PDF de remisión
+      const { data: fullTransfer, error: fullTransferError } = await supabase
+        .from('transfers')
+        .select(`
+          *,
+          from_user:users!transfers_from_user_id_fkey(*),
+          to_user:users!transfers_to_user_id_fkey(*),
+          transfer_items(
+            *,
+            canastilla:canastillas(*)
+          )
+        `)
+        .eq('id', transfer.id)
+        .single()
+
+      if (fullTransferError) throw fullTransferError
+
+      // 6. Abrir la remisión PDF
+      await openRemisionTraspasoPDF(fullTransfer as unknown as Transfer)
+
+      alert(`✅ Solicitud de traspaso creada exitosamente.\n\nRemisión: ${remisionNumber}`)
       onSuccess()
       handleClose()
     } catch (err: any) {
