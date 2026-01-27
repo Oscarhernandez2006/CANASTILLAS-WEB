@@ -223,29 +223,35 @@ export const generateFacturaDevolucionPDF = async (data: FacturaData) => {
 
   yPos += 8
 
-  // Agrupar canastillas por tamaño y color
-  const groupedCanastillas = returnData.canastillas.reduce((acc, item) => {
-    const key = `${item.size}-${item.color}`
-    if (!acc[key]) {
-      acc[key] = {
-        size: item.size,
-        color: item.color,
-        count: 0
-      }
+  // Agrupar canastillas por tamaño, color, forma y condición
+  type CanastillaGroup = { size: string; color: string; shape: string; condition: string; count: number }
+  const groupedCanastillas: Record<string, CanastillaGroup> = {}
+
+  for (const item of returnData.canastillas) {
+    const size = item.size || 'N/A'
+    const color = item.color || 'N/A'
+    const shape = item.shape || '-'
+    const condition = item.condition || 'N/A'
+    const key = `${size}-${color}-${shape}-${condition}`
+
+    if (!groupedCanastillas[key]) {
+      groupedCanastillas[key] = { size, color, shape, condition, count: 0 }
     }
-    acc[key].count++
-    return acc
-  }, {} as Record<string, { size: string; color: string; count: number }>)
+    groupedCanastillas[key].count++
+  }
 
   const canastillasData = Object.values(groupedCanastillas).map((group, index) => [
     (index + 1).toString(),
-    `${group.size} - ${group.color}`,
+    group.size,
+    group.color,
+    group.shape,
+    group.condition,
     group.count.toString(),
   ])
 
   autoTable(doc, {
     startY: yPos,
-    head: [['#', 'DESCRIPCIÓN', 'CANTIDAD']],
+    head: [['#', 'TAMAÑO', 'COLOR', 'FORMA', 'CONDICIÓN', 'CANTIDAD']],
     body: canastillasData,
     theme: 'striped',
     styles: {
@@ -268,9 +274,12 @@ export const generateFacturaDevolucionPDF = async (data: FacturaData) => {
       fillColor: [...lightGray],
     },
     columnStyles: {
-      0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 135, fontStyle: 'bold' },
-      2: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+      0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 35, halign: 'center' },
+      2: { cellWidth: 30, halign: 'center' },
+      3: { cellWidth: 35, halign: 'center' },
+      4: { cellWidth: 38, halign: 'center' },
+      5: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
     },
   })
 
@@ -307,7 +316,8 @@ export const generateFacturaDevolucionPDF = async (data: FacturaData) => {
   doc.text('Días facturados:', labelX, yPos)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...darkGray)
-  doc.text(`${returnData.daysCharged} días`, rightX, yPos, { align: 'right' })
+  const diasText = returnData.daysCharged === 1 ? '1 día' : `${returnData.daysCharged} días`
+  doc.text(diasText, rightX, yPos, { align: 'right' })
 
   yPos += 6
   doc.setFont('helvetica', 'normal')
@@ -362,7 +372,7 @@ export const generateFacturaDevolucionPDF = async (data: FacturaData) => {
 
   // Mensaje de devolución parcial
   if (isPartial) {
-    yPos += 10
+    yPos += 25  // Más espacio después del total
     doc.setFillColor(254, 243, 199) // Amarillo claro
     doc.rect(15, yPos, 180, 12, 'F')
 

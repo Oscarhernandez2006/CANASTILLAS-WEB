@@ -196,6 +196,7 @@ export interface Transfer {
   rejection_reason?: string
   remision_number?: string
   remision_generated_at?: string
+  is_washing_transfer?: boolean  // Si es traspaso a personal de lavado
   requested_at: string
   processed_at?: string
   created_at: string

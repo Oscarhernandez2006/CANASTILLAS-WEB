@@ -16,12 +16,27 @@ export function useRentalSettings() {
       const { data, error } = await supabase
         .from('rental_settings')
         .select('*')
-        .single()
+        .limit(1)
+        .maybeSingle() // Usar maybeSingle para no lanzar error si no hay datos
 
-      if (error) throw error
+      if (error) {
+        console.error('Error fetching rental settings:', error)
+        // Si no hay configuración, usar valores por defecto temporales
+        // El admin debe ejecutar el SQL para crear la configuración
+        setSettings(null)
+        return
+      }
+
+      if (!data) {
+        console.warn('No rental settings found. Please run fix_rental_settings_complete.sql')
+        setSettings(null)
+        return
+      }
+
       setSettings(data)
     } catch (error) {
       console.error('Error fetching rental settings:', error)
+      setSettings(null)
     } finally {
       setLoading(false)
     }
@@ -29,6 +44,12 @@ export function useRentalSettings() {
 
   const updateDailyRate = async (newRate: number, userId: string) => {
     try {
+      // Obtener el ID actual de settings
+      const currentId = settings?.id
+      if (!currentId) {
+        return false
+      }
+
       const { error } = await supabase
         .from('rental_settings')
         .update({
@@ -36,7 +57,7 @@ export function useRentalSettings() {
           updated_at: new Date().toISOString(),
           updated_by: userId
         })
-        .eq('id', settings?.id)
+        .eq('id', currentId)
 
       if (error) throw error
       await fetchSettings()
@@ -49,6 +70,11 @@ export function useRentalSettings() {
 
   const updateInternalRate = async (newRate: number, userId: string) => {
     try {
+      const currentId = settings?.id
+      if (!currentId) {
+        return false
+      }
+
       const { error } = await supabase
         .from('rental_settings')
         .update({
@@ -56,7 +82,7 @@ export function useRentalSettings() {
           updated_at: new Date().toISOString(),
           updated_by: userId
         })
-        .eq('id', settings?.id)
+        .eq('id', currentId)
 
       if (error) throw error
       await fetchSettings()
@@ -69,6 +95,26 @@ export function useRentalSettings() {
 
   const updateSettings = async (dailyRate: number, internalRate: number, userId: string) => {
     try {
+      const currentId = settings?.id
+
+      if (!currentId) {
+        // Si no hay ID, crear nuevo registro
+        const { error: insertError } = await supabase
+          .from('rental_settings')
+          .insert([{
+            daily_rate: dailyRate,
+            internal_rate: internalRate,
+            currency: 'COP',
+            updated_at: new Date().toISOString(),
+            updated_by: userId
+          }])
+
+        if (insertError) throw insertError
+        await fetchSettings()
+        return { success: true }
+      }
+
+      // Si hay ID, actualizar
       const { error } = await supabase
         .from('rental_settings')
         .update({
@@ -77,7 +123,7 @@ export function useRentalSettings() {
           updated_at: new Date().toISOString(),
           updated_by: userId
         })
-        .eq('id', settings?.id)
+        .eq('id', currentId)
 
       if (error) throw error
       await fetchSettings()

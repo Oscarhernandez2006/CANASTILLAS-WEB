@@ -188,12 +188,13 @@ export const generateInvoicePDF = async (rental: Rental) => {
   const startDate = new Date(rental.start_date).toLocaleDateString('es-CO')
   const endDate = new Date(rental.actual_return_date || new Date()).toLocaleDateString('es-CO')
   const actualDays = rental.actual_days || 0
-  
+  const diasText = actualDays === 1 ? '1 día' : `${actualDays} días`
+
   // Tabla de fechas minimalista
   autoTable(doc, {
     startY: yPos,
     head: [['FECHA DE SALIDA', 'FECHA DE RETORNO', 'DÍAS DE ALQUILER']],
-    body: [[startDate, endDate, `${actualDays} días`]],
+    body: [[startDate, endDate, diasText]],
     theme: 'plain',
     styles: {
       fontSize: 9,
@@ -342,7 +343,7 @@ export const generateInvoicePDF = async (rental: Rental) => {
   yPos += 5
   
   doc.text('Días de alquiler:', labelX, yPos)
-  doc.text(`${actualDays} días`, rightX, yPos, { align: 'right' })
+  doc.text(diasText, rightX, yPos, { align: 'right' })
   yPos += 5
   
   doc.text('Subtotal:', labelX, yPos)

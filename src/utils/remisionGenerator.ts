@@ -240,29 +240,35 @@ export const generateRemisionPDF = async (rental: Rental, remisionNumber: string
   
   yPos += 8
 
-  // Agrupar canastillas por tamaño y color
-  const groupedCanastillas = (rental.rental_items || []).reduce((acc, item) => {
-    const key = `${item.canastilla.size}-${item.canastilla.color}`
-    if (!acc[key]) {
-      acc[key] = {
-        size: item.canastilla.size,
-        color: item.canastilla.color,
-        count: 0
-      }
+  // Agrupar canastillas por tamaño, color, forma y condición
+  type CanastillaGroup = { size: string; color: string; shape: string; condition: string; count: number }
+  const groupedCanastillas: Record<string, CanastillaGroup> = {}
+
+  for (const item of rental.rental_items || []) {
+    const size = item.canastilla?.size || 'N/A'
+    const color = item.canastilla?.color || 'N/A'
+    const shape = item.canastilla?.shape || '-'
+    const condition = item.canastilla?.condition || 'N/A'
+    const key = `${size}-${color}-${shape}-${condition}`
+
+    if (!groupedCanastillas[key]) {
+      groupedCanastillas[key] = { size, color, shape, condition, count: 0 }
     }
-    acc[key].count++
-    return acc
-  }, {} as Record<string, { size: string; color: string; count: number }>)
+    groupedCanastillas[key].count++
+  }
 
   const canastillas = Object.values(groupedCanastillas).map((group, index) => [
     (index + 1).toString(),
-    `${group.size} ${group.color}`,
+    group.size,
+    group.color,
+    group.shape,
+    group.condition,
     group.count.toString(),
   ])
 
   autoTable(doc, {
     startY: yPos,
-    head: [['#', 'DESCRIPCIÓN', 'CANTIDAD']],
+    head: [['#', 'TAMAÑO', 'COLOR', 'FORMA', 'CONDICIÓN', 'CANTIDAD']],
     body: canastillas,
     theme: 'striped',
     styles: {
@@ -286,8 +292,11 @@ export const generateRemisionPDF = async (rental: Rental, remisionNumber: string
     },
     columnStyles: {
       0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 133, fontStyle: 'bold' },
-      2: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 35, halign: 'center' },
+      2: { cellWidth: 30, halign: 'center' },
+      3: { cellWidth: 35, halign: 'center' },
+      4: { cellWidth: 38, halign: 'center' },
+      5: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
     },
   })
   

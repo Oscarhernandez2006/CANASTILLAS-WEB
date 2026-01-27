@@ -30,6 +30,15 @@ export function TraspasosPage() {
     try {
       const now = new Date().toISOString()
 
+      // Obtener el transfer primero para verificar si es de lavado
+      const { data: transferData } = await supabase
+        .from('transfers')
+        .select('is_washing_transfer')
+        .eq('id', id)
+        .single()
+
+      const isWashingTransfer = transferData?.is_washing_transfer || false
+
       // Actualizar el estado a ACEPTADO (la remisión ya fue generada al crear la solicitud)
       const { error } = await supabase
         .from('transfers')
@@ -60,12 +69,16 @@ export function TraspasosPage() {
       if (transfer) {
         const canastillaIds = transfer.transfer_items.map((item: any) => item.canastilla_id)
 
-        // Cambiar el propietario de las canastillas
+        // Cambiar el propietario y estado de las canastillas
+        // Si es envío a lavado: estado EN_LAVADO
+        // Si es traspaso normal: estado DISPONIBLE
+        const newStatus = isWashingTransfer ? 'EN_LAVADO' : 'DISPONIBLE'
+
         await supabase
           .from('canastillas')
           .update({
             current_owner_id: transfer.to_user_id,
-            status: 'DISPONIBLE'
+            status: newStatus
           })
           .in('id', canastillaIds)
 
@@ -73,7 +86,10 @@ export function TraspasosPage() {
         await openRemisionTraspasoPDF(transfer as unknown as Transfer)
       }
 
-      alert('✅ Traspaso aprobado exitosamente. Remisión: ' + (transfer?.remision_number || ''))
+      const successMessage = isWashingTransfer
+        ? '✅ Canastillas recibidas para lavado. Remisión: ' + (transfer?.remision_number || '')
+        : '✅ Traspaso aprobado exitosamente. Remisión: ' + (transfer?.remision_number || '')
+      alert(successMessage)
       refreshTraspasos()
     } catch (error: any) {
       alert('❌ Error: ' + error.message)

@@ -189,9 +189,17 @@ export function SolicitarTraspasoModal({
       const canastillaIds = Array.from(selectedCanastillas)
       const now = new Date().toISOString()
 
-      // 1. Generar número de remisión
+      // Verificar si el usuario destino es personal de lavado
+      const selectedUser = users.find(u => u.id === formData.to_user_id)
+      const isWashingTransfer = selectedUser?.role === 'washing_staff'
+
+      // 1. Generar número de remisión (RL para lavado, RT para traspaso normal)
+      const remisionFunction = isWashingTransfer
+        ? 'generate_washing_remision_number'
+        : 'generate_transfer_remision_number'
+
       const { data: remisionData, error: remisionError } = await supabase
-        .rpc('generate_transfer_remision_number')
+        .rpc(remisionFunction)
 
       if (remisionError) throw remisionError
       const remisionNumber = remisionData as string
@@ -203,10 +211,11 @@ export function SolicitarTraspasoModal({
           from_user_id: currentUser.id,
           to_user_id: formData.to_user_id,
           status: 'PENDIENTE',
-          reason: formData.reason,
+          reason: isWashingTransfer ? 'Envío a lavado' : formData.reason,
           notes: formData.notes,
           remision_number: remisionNumber,
           remision_generated_at: now,
+          is_washing_transfer: isWashingTransfer,
         }])
         .select()
         .single()
@@ -226,13 +235,20 @@ export function SolicitarTraspasoModal({
       if (itemsError) throw itemsError
 
       // 4. Crear notificación
+      const notifTitle = isWashingTransfer
+        ? 'Canastillas enviadas a lavado'
+        : 'Nueva solicitud de traspaso'
+      const notifMessage = isWashingTransfer
+        ? `${currentUser.first_name} ${currentUser.last_name} te ha enviado ${canastillaIds.length} canastilla${canastillaIds.length !== 1 ? 's' : ''} para lavado.`
+        : `${currentUser.first_name} ${currentUser.last_name} te ha enviado una solicitud de traspaso de ${canastillaIds.length} canastilla${canastillaIds.length !== 1 ? 's' : ''}.`
+
       await supabase
         .from('notifications')
         .insert([{
           user_id: formData.to_user_id,
-          type: 'TRASPASO_RECIBIDO',
-          title: 'Nueva solicitud de traspaso',
-          message: `${currentUser.first_name} ${currentUser.last_name} te ha enviado una solicitud de traspaso de ${canastillaIds.length} canastilla${canastillaIds.length !== 1 ? 's' : ''}.`,
+          type: isWashingTransfer ? 'LAVADO_RECIBIDO' : 'TRASPASO_RECIBIDO',
+          title: notifTitle,
+          message: notifMessage,
           related_id: transfer.id
         }])
 
@@ -256,7 +272,10 @@ export function SolicitarTraspasoModal({
       // 6. Abrir la remisión PDF
       await openRemisionTraspasoPDF(fullTransfer as unknown as Transfer)
 
-      alert(`✅ Solicitud de traspaso creada exitosamente.\n\nRemisión: ${remisionNumber}`)
+      const successMessage = isWashingTransfer
+        ? `✅ Canastillas enviadas a lavado exitosamente.\n\nRemisión de Lavado: ${remisionNumber}`
+        : `✅ Solicitud de traspaso creada exitosamente.\n\nRemisión: ${remisionNumber}`
+      alert(successMessage)
       onSuccess()
       handleClose()
     } catch (err: any) {
@@ -367,16 +386,31 @@ export function SolicitarTraspasoModal({
                       <option value="">Seleccionar usuario...</option>
                       {(users || []).map((user) => (
                         <option key={user.id} value={user.id}>
-                          {user.first_name} {user.last_name} ({user.email})
+                          {user.first_name} {user.last_name} {user.role === 'washing_staff' ? '🧼 [LAVADO]' : ''} ({user.email})
                         </option>
                       ))}
                     </select>
+
+                    {/* Aviso cuando se selecciona personal de lavado */}
+                    {formData.to_user_id && users.find(u => u.id === formData.to_user_id)?.role === 'washing_staff' && (
+                      <div className="mt-2 p-3 bg-cyan-50 border border-cyan-200 rounded-lg">
+                        <div className="flex items-center text-cyan-800">
+                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-sm font-medium">
+                            Envío a Lavado: Las canastillas cambiarán a estado "EN_LAVADO" al aprobar.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {(users || []).length === 0 && (
                       <p className="mt-2 text-sm text-red-600">
                         No hay usuarios disponibles
                       </p>
                     )}
-                    {(users || []).length > 0 && (
+                    {(users || []).length > 0 && !formData.to_user_id && (
                       <p className="mt-2 text-sm text-gray-500">
                         {users.length} usuario{users.length !== 1 ? 's' : ''} disponible{users.length !== 1 ? 's' : ''}
                       </p>
@@ -385,19 +419,22 @@ export function SolicitarTraspasoModal({
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Razón del Traspaso *
-                </label>
-                <input
-                  type="text"
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="Ej: Canastillas limpias para despacho"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  required
-                />
-              </div>
+              {/* Mostrar campo de razón solo si NO es personal de lavado */}
+              {!(formData.to_user_id && users.find(u => u.id === formData.to_user_id)?.role === 'washing_staff') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Razón del Traspaso *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.reason}
+                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    placeholder="Ej: Canastillas limpias para despacho"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

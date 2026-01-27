@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/Button'
 import { CrearAlquilerModal } from '@/components/CrearAlquilerModal'
@@ -24,12 +24,12 @@ export function AlquileresPage() {
 
   // Estados para edición de configuración
   const [isEditingConfig, setIsEditingConfig] = useState(false)
-  const [editDailyRate, setEditDailyRate] = useState<number>(0)
-  const [editInternalRate, setEditInternalRate] = useState<number>(0)
+  const [editDailyRate, setEditDailyRate] = useState<string>('')
+  const [editInternalRate, setEditInternalRate] = useState<string>('')
   const [savingConfig, setSavingConfig] = useState(false)
 
   const { activeRentals, completedRentals, loading, refreshRentals } = useRentals()
-  const { settings, updateSettings, refreshSettings } = useRentalSettings()
+  const { settings, loading: loadingSettings, updateSettings, refreshSettings } = useRentalSettings()
   const permissions = usePermissions()
   const { user } = useAuthStore()
 
@@ -38,6 +38,14 @@ export function AlquileresPage() {
 
   // Permiso para editar configuración: super_admin o quien tenga el permiso
   const canEditConfig = user?.role === 'super_admin' || permissions.hasPermission('alquileres.editar_configuracion')
+
+  // Sincronizar valores de edición cuando settings cargue
+  useEffect(() => {
+    if (settings && !isEditingConfig) {
+      setEditDailyRate(settings.daily_rate?.toString() || '')
+      setEditInternalRate(settings.internal_rate?.toString() || '')
+    }
+  }, [settings, isEditingConfig])
 
   const calculateCurrentDays = (startDate: string) => {
     const start = new Date(startDate)
@@ -402,7 +410,7 @@ export function AlquileresPage() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold text-gray-900">Configuración de Tarifas</h3>
-              {canEditConfig && !isEditingConfig && (
+              {canEditConfig && !isEditingConfig && !loadingSettings && (
                 <Button
                   size="sm"
                   onClick={() => {
@@ -418,6 +426,25 @@ export function AlquileresPage() {
                 </Button>
               )}
             </div>
+
+            {loadingSettings ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+            ) : !settings ? (
+              <div className="text-center py-8">
+                <div className="text-amber-600 mb-2">
+                  <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <p className="text-gray-700 font-medium">No se encontró configuración de tarifas</p>
+                <p className="text-gray-500 text-sm mt-1">
+                  Ejecuta el archivo <code className="bg-gray-100 px-1 rounded">fix_rental_settings_complete.sql</code> en Supabase
+                </p>
+              </div>
+            ) : (
+              <>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
               {/* Tarifa Externa (por día) */}
@@ -437,7 +464,8 @@ export function AlquileresPage() {
                       min="0"
                       step="100"
                       value={editDailyRate}
-                      onChange={(e) => setEditDailyRate(Number(e.target.value))}
+                      onChange={(e) => setEditDailyRate(e.target.value)}
+                      placeholder="0"
                       className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                     />
                     <span className="text-gray-500">COP</span>
@@ -470,7 +498,8 @@ export function AlquileresPage() {
                       min="0"
                       step="100"
                       value={editInternalRate}
-                      onChange={(e) => setEditInternalRate(Number(e.target.value))}
+                      onChange={(e) => setEditInternalRate(e.target.value)}
+                      placeholder="0"
                       className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
                     />
                     <span className="text-gray-500">COP</span>
@@ -493,8 +522,17 @@ export function AlquileresPage() {
                 <Button
                   onClick={async () => {
                     if (!user) return
+                    // Convertir strings a números y validar
+                    const dailyRateNum = parseFloat(editDailyRate) || 0
+                    const internalRateNum = parseFloat(editInternalRate) || 0
+
+                    if (dailyRateNum < 0 || internalRateNum < 0) {
+                      alert('❌ Las tarifas no pueden ser negativas')
+                      return
+                    }
+
                     setSavingConfig(true)
-                    const result = await updateSettings(editDailyRate, editInternalRate, user.id)
+                    const result = await updateSettings(dailyRateNum, internalRateNum, user.id)
                     setSavingConfig(false)
                     if (result.success) {
                       alert('✅ Tarifas actualizadas correctamente')
@@ -539,6 +577,8 @@ export function AlquileresPage() {
               <p className="text-xs text-gray-400 mt-4">
                 Última actualización: {formatDate(settings.updated_at)}
               </p>
+            )}
+            </>
             )}
           </div>
         )}

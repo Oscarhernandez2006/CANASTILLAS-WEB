@@ -12,15 +12,46 @@ export function LoginPage() {
 
   const { signIn } = useAuthStore()
 
+  // Validar email
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // Validaciones del lado del cliente
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+
+    if (!trimmedEmail) {
+      setError('Por favor ingresa tu correo electrónico')
+      return
+    }
+
+    if (!isValidEmail(trimmedEmail)) {
+      setError('Por favor ingresa un correo electrónico válido')
+      return
+    }
+
+    if (!trimmedPassword) {
+      setError('Por favor ingresa tu contraseña')
+      return
+    }
+
+    if (trimmedPassword.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres')
+      return
+    }
+
     setLoading(true)
 
     try {
-      await signIn(email, password, rememberMe)
+      await signIn(trimmedEmail, trimmedPassword, rememberMe)
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión')
+      setError(err.message || 'Error al iniciar sesión. Por favor intenta de nuevo')
     } finally {
       setLoading(false)
     }

@@ -2,6 +2,43 @@ import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { User } from '@/types/index'
 
+// Traducir errores de Supabase a español
+const translateAuthError = (error: any): string => {
+  const message = error?.message || error?.code || ''
+  const code = error?.code || ''
+
+  // Errores de autenticación
+  if (message.includes('Invalid login credentials') || code === 'invalid_credentials') {
+    return 'Correo electrónico o contraseña incorrectos'
+  }
+  if (message.includes('Email not confirmed')) {
+    return 'Por favor confirma tu correo electrónico antes de iniciar sesión'
+  }
+  if (message.includes('Invalid email')) {
+    return 'El correo electrónico no es válido'
+  }
+  if (message.includes('User not found')) {
+    return 'No existe una cuenta con este correo electrónico'
+  }
+  if (message.includes('Too many requests') || code === 'over_request_rate_limit') {
+    return 'Demasiados intentos. Por favor espera unos minutos'
+  }
+  if (message.includes('Network') || message.includes('fetch')) {
+    return 'Error de conexión. Verifica tu internet'
+  }
+
+  // Errores de base de datos (usuarios)
+  if (code === 'PGRST116' || message.includes('0 rows')) {
+    return 'Tu cuenta no está configurada correctamente. Contacta al administrador'
+  }
+  if (message.includes('JWT expired')) {
+    return 'Tu sesión ha expirado. Por favor inicia sesión nuevamente'
+  }
+
+  // Error genérico
+  return 'Error al iniciar sesión. Por favor intenta de nuevo'
+}
+
 interface AuthState {
   user: User | null
   session: any
@@ -30,7 +67,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         password,
       })
 
-      if (error) throw error
+      if (error) {
+        throw new Error(translateAuthError(error))
+      }
 
       if (data.user) {
         // Obtener información adicional del usuario desde la tabla users
@@ -40,7 +79,15 @@ export const useAuthStore = create<AuthState>((set) => ({
           .eq('id', data.user.id)
           .single()
 
-        if (userError) throw userError
+        if (userError) {
+          console.error('Error fetching user data:', userError)
+          throw new Error(translateAuthError(userError))
+        }
+
+        // Verificar si el usuario está activo
+        if (!userData.is_active) {
+          throw new Error('Tu cuenta está desactivada. Contacta al administrador')
+        }
 
         // Guardar preferencia de "Recordarme"
         if (rememberMe) {
@@ -55,7 +102,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
     } catch (error: any) {
       console.error('Error signing in:', error)
-      throw error
+      // Si ya es un Error con mensaje traducido, pasarlo directamente
+      if (error.message && !error.code) {
+        throw error
+      }
+      throw new Error(translateAuthError(error))
     }
   },
 

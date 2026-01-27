@@ -22,6 +22,9 @@ const getBase64FromUrl = async (url: string): Promise<string> => {
 export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   const doc = new jsPDF()
 
+  // Detectar si es un traspaso de lavado
+  const isWashingTransfer = transfer.is_washing_transfer || false
+
   // Paleta de colores
   const black: [number, number, number] = [0, 0, 0]
   const darkGray: [number, number, number] = [51, 51, 51]
@@ -29,6 +32,10 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   const lightGray: [number, number, number] = [242, 242, 242]
   const borderGray: [number, number, number] = [217, 217, 217]
   const accentPurple: [number, number, number] = [139, 92, 246] // Violeta para traspasos
+  const accentCyan: [number, number, number] = [6, 182, 212] // Cyan para lavado
+
+  // Color de acento según tipo de traspaso
+  const accentColor = isWashingTransfer ? accentCyan : accentPurple
 
   const pageHeight = doc.internal.pageSize.height
 
@@ -37,7 +44,7 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   // ============================================
 
   // Línea superior de acento
-  doc.setFillColor(...accentPurple)
+  doc.setFillColor(...accentColor)
   doc.rect(0, 0, 210, 2, 'F')
 
   // Cargar logo
@@ -88,8 +95,9 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
 
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...accentPurple)
-  doc.text('REMISIÓN TRASPASO', 167.5, 18, { align: 'center' })
+  doc.setTextColor(...accentColor)
+  const tituloRemision = isWashingTransfer ? 'REMISIÓN LAVADO' : 'REMISIÓN TRASPASO'
+  doc.text(tituloRemision, 167.5, 18, { align: 'center' })
 
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
@@ -130,7 +138,7 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   doc.text('ENTREGA:', 15, yPos)
 
   yPos += 2
-  doc.setDrawColor(...accentPurple)
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(2)
   doc.line(15, yPos, 45, yPos)
 
@@ -166,7 +174,7 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   doc.text('RECIBE:', 115, rightYPos)
 
   rightYPos += 2
-  doc.setDrawColor(...accentPurple)
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(2)
   doc.line(115, rightYPos, 145, rightYPos)
 
@@ -202,38 +210,45 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...darkGray)
-  doc.text('CANASTILLAS TRASPASADAS', 15, yPos)
+  const tituloCanastillas = isWashingTransfer ? 'CANASTILLAS ENVIADAS A LAVADO' : 'CANASTILLAS TRASPASADAS'
+  doc.text(tituloCanastillas, 15, yPos)
 
   yPos += 2
-  doc.setDrawColor(...accentPurple)
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(2)
-  doc.line(15, yPos, 75, yPos)
+  doc.line(15, yPos, isWashingTransfer ? 90 : 75, yPos)
 
   yPos += 8
 
-  // Agrupar canastillas por tamaño y color
-  const groupedCanastillas = (transfer.transfer_items || []).reduce((acc, item) => {
-    const key = `${item.canastilla?.size}-${item.canastilla?.color}`
-    if (!acc[key]) {
-      acc[key] = {
-        size: item.canastilla?.size || '',
-        color: item.canastilla?.color || '',
-        count: 0
-      }
+  // Agrupar canastillas por tamaño, color, forma y condición
+  type CanastillaGroup = { size: string; color: string; shape: string; condition: string; count: number }
+  const groupedCanastillas: Record<string, CanastillaGroup> = {}
+
+  for (const item of transfer.transfer_items || []) {
+    const size = item.canastilla?.size || 'N/A'
+    const color = item.canastilla?.color || 'N/A'
+    const shape = item.canastilla?.shape || '-'
+    const condition = item.canastilla?.condition || 'N/A'
+    const key = `${size}-${color}-${shape}-${condition}`
+
+    if (!groupedCanastillas[key]) {
+      groupedCanastillas[key] = { size, color, shape, condition, count: 0 }
     }
-    acc[key].count++
-    return acc
-  }, {} as Record<string, { size: string; color: string; count: number }>)
+    groupedCanastillas[key].count++
+  }
 
   const canastillasData = Object.values(groupedCanastillas).map((group, index) => [
     (index + 1).toString(),
-    `${group.size} - ${group.color}`,
+    group.size,
+    group.color,
+    group.shape,
+    group.condition,
     group.count.toString(),
   ])
 
   autoTable(doc, {
     startY: yPos,
-    head: [['#', 'DESCRIPCIÓN', 'CANTIDAD']],
+    head: [['#', 'TAMAÑO', 'COLOR', 'FORMA', 'CONDICIÓN', 'CANTIDAD']],
     body: canastillasData,
     theme: 'striped',
     styles: {
@@ -243,7 +258,7 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
       lineWidth: 0.1,
     },
     headStyles: {
-      fillColor: [...accentPurple],
+      fillColor: [...accentColor],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 9,
@@ -256,9 +271,12 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
       fillColor: [...lightGray],
     },
     columnStyles: {
-      0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 135, fontStyle: 'bold' },
-      2: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+      0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 35, halign: 'center' },
+      2: { cellWidth: 30, halign: 'center' },
+      3: { cellWidth: 35, halign: 'center' },
+      4: { cellWidth: 38, halign: 'center' },
+      5: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
     },
   })
 
@@ -390,7 +408,8 @@ export const generateRemisionTraspasoPDF = async (transfer: Transfer) => {
 
 export const downloadRemisionTraspasoPDF = async (transfer: Transfer) => {
   const doc = await generateRemisionTraspasoPDF(transfer)
-  const fileName = `Remision_Traspaso_${transfer.remision_number}.pdf`
+  const tipoRemision = transfer.is_washing_transfer ? 'Lavado' : 'Traspaso'
+  const fileName = `Remision_${tipoRemision}_${transfer.remision_number}.pdf`
   doc.save(fileName)
 }
 

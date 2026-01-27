@@ -13,7 +13,6 @@ import { UsuariosPage } from './pages/UsuariosPage'
 import { ClientesPage } from './pages/ClientesPage'
 import { InventarioPage } from './pages/InventarioPage'
 import { PermisosPage } from './pages/PermisosPage'
-import { LavadoPage } from './pages/LavadoPage'
 
 // Componente para rutas protegidas
 function ProtectedRoute({ children, requirePermission }: { children: React.ReactNode, requirePermission?: () => boolean }) {
@@ -135,15 +134,6 @@ function App() {
           element={
             <ProtectedRoute requirePermission={permissions.canAccessClientes}>
               <ClientesPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/lavado"
-          element={
-            <ProtectedRoute requirePermission={permissions.canAccessLavado}>
-              <LavadoPage />
             </ProtectedRoute>
           }
         />

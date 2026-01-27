@@ -395,8 +395,9 @@ export function SalidaCanastillasModal({
                             max={lote.cantidad}
                             value={cantidades.get(lote.id) || ''}
                             onChange={(e) =>
-                              setCantidadLote(lote.id, parseInt(e.target.value) || 0)
+                              setCantidadLote(lote.id, e.target.value === '' ? 0 : parseInt(e.target.value))
                             }
+                            placeholder="0"
                             className="w-12 text-center text-sm font-medium border-0 focus:outline-none"
                           />
                           <button

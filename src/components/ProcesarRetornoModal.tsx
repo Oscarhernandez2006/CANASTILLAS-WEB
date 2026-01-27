@@ -333,8 +333,9 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
                           type="number"
                           min="0"
                           max={lote.totalDisponible}
-                          value={lote.cantidadDevolver}
-                          onChange={(e) => handleCantidadChange(lote.key, parseInt(e.target.value) || 0)}
+                          value={lote.cantidadDevolver || ''}
+                          onChange={(e) => handleCantidadChange(lote.key, e.target.value === '' ? 0 : parseInt(e.target.value))}
+                          placeholder="0"
                           className="w-full px-3 py-1.5 text-center border border-gray-300 rounded-lg text-sm focus:ring-primary-500 focus:border-primary-500"
                         />
                       </div>

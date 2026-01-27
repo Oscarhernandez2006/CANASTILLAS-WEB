@@ -35,7 +35,7 @@ export function CanastillaLoteSelector({
     condition: '',
   })
 
-  const [cantidadLote, setCantidadLote] = useState(1)
+  const [cantidadLote, setCantidadLote] = useState<string>('1')
 
   const colores = useCanastillaAttributes('COLOR')
   const tamaños = useCanastillaAttributes('SIZE')
@@ -70,7 +70,8 @@ export function CanastillaLoteSelector({
       return
     }
 
-    const cantidad = Math.min(cantidadLote, canastillasFiltradas.length)
+    const cantidadNum = Math.max(1, parseInt(cantidadLote) || 1)
+    const cantidad = Math.min(cantidadNum, canastillasFiltradas.length)
     const canastillasParaLote = canastillasFiltradas.slice(0, cantidad)
 
     // Obtener valores únicos de las canastillas seleccionadas para el lote
@@ -302,7 +303,8 @@ export function CanastillaLoteSelector({
             min="1"
             max={canastillasFiltradas.length || 1}
             value={cantidadLote}
-            onChange={(e) => setCantidadLote(Math.max(1, parseInt(e.target.value) || 1))}
+            onChange={(e) => setCantidadLote(e.target.value)}
+            placeholder="1"
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
           />
         </div>

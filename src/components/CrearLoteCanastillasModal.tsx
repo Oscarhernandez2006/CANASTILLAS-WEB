@@ -28,7 +28,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
   const condiciones = useCanastillaAttributes('CONDICION')
 
   const [formData, setFormData] = useState({
-    cantidad: 1,
+    cantidad: '1',
     codigo_inicio: '',
     size: '',
     color: '',
@@ -100,6 +100,12 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       const { data: userData } = await supabase.auth.getUser()
       const userId = userData?.user?.id
 
+      // Convertir cantidad a número y validar
+      const cantidadNum = Math.max(1, parseInt(formData.cantidad) || 1)
+      if (cantidadNum < 1 || cantidadNum > 10000) {
+        throw new Error('La cantidad debe estar entre 1 y 10,000')
+      }
+
       // Extraer el número inicial del código
       const codigoMatch = formData.codigo_inicio.match(/(\d+)/)
       if (!codigoMatch) {
@@ -114,7 +120,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       const codigosACrear = []
       let numeroActual = numeroInicial
 
-      for (let i = 0; i < formData.cantidad; i++) {
+      for (let i = 0; i < cantidadNum; i++) {
         const numeroFormateado = numeroActual.toString().padStart(longitudNumero, '0')
         const codigo = `${prefijo}${numeroFormateado}`
         codigosACrear.push(codigo)
@@ -141,7 +147,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       const canastillas = []
       numeroActual = numeroInicial
 
-      for (let i = 0; i < formData.cantidad; i++) {
+      for (let i = 0; i < cantidadNum; i++) {
         const numeroFormateado = numeroActual.toString().padStart(longitudNumero, '0')
         const codigo = `${prefijo}${numeroFormateado}`
         const qr_code = formData.generar_qr ? `QR-${codigo}` : ''
@@ -185,7 +191,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
 
       // Resetear formulario
       setFormData({
-        cantidad: 1,
+        cantidad: '1',
         codigo_inicio: '',
         size: '',
         color: '',
@@ -206,6 +212,9 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
 
   if (!isOpen) return null
 
+  // Convertir cantidad a número para display
+  const cantidadDisplay = Math.max(1, parseInt(formData.cantidad) || 1)
+
   const codigoFinal = (() => {
     try {
       const codigoMatch = formData.codigo_inicio.match(/(\d+)/)
@@ -214,7 +223,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       const prefijo = formData.codigo_inicio.substring(0, codigoMatch.index)
       const numeroInicial = parseInt(codigoMatch[0])
       const longitudNumero = codigoMatch[0].length
-      const numeroFinal = numeroInicial + formData.cantidad - 1
+      const numeroFinal = numeroInicial + cantidadDisplay - 1
       const numeroFormateado = numeroFinal.toString().padStart(longitudNumero, '0')
 
       return `${prefijo}${numeroFormateado}`
@@ -234,7 +243,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       const longitudNumero = codigoMatch[0].length
       const codigosPreview = []
 
-      const limite = Math.min(10, formData.cantidad)
+      const limite = Math.min(10, cantidadDisplay)
       for (let i = 0; i < limite; i++) {
         const numeroFormateado = (numeroInicial + i).toString().padStart(longitudNumero, '0')
         codigosPreview.push(`${prefijo}${numeroFormateado}`)
@@ -314,7 +323,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-blue-700">
-                      Se crearán <strong>{formData.cantidad}</strong> canastilla(s) secuencialmente.
+                      Se crearán <strong>{cantidadDisplay}</strong> canastilla(s) secuencialmente.
                       {' '}Los códigos irán desde <strong>{formData.codigo_inicio}</strong> hasta <strong>{codigoFinal}</strong>.
                     </p>
                   </div>
@@ -336,9 +345,9 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                         {codigo}
                       </div>
                     ))}
-                    {formData.cantidad > 10 && (
+                    {cantidadDisplay > 10 && (
                       <div className="bg-white border border-dashed border-gray-300 rounded px-3 py-2 text-center text-xs font-medium text-gray-500 flex items-center justify-center">
-                        +{formData.cantidad - 10} más
+                        +{cantidadDisplay - 10} más
                       </div>
                     )}
                   </div>
@@ -356,7 +365,8 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                     min="1"
                     max="10000"
                     value={formData.cantidad}
-                    onChange={(e) => setFormData({ ...formData, cantidad: parseInt(e.target.value) || 1 })}
+                    onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
+                    placeholder="1"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     required
                   />
@@ -498,7 +508,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                 loading={loading}
                 disabled={loading || loadingCodigo}
               >
-                Crear {formData.cantidad} Canastilla(s)
+                Crear {cantidadDisplay} Canastilla(s)
               </Button>
             </div>
           </form>
