@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from '@/utils/helpers'
 import { useRentalReturns } from '@/hooks/useRentalReturns'
 import { useAuthStore } from '@/store/authStore'
 import { openFacturaDevolucionPDF } from '@/utils/facturaDevolucionGenerator'
+import { supabase } from '@/lib/supabase'
 
 interface ProcesarRetornoModalProps {
   isOpen: boolean
@@ -28,6 +29,7 @@ interface LoteGroup {
 
 export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: ProcesarRetornoModalProps) {
   const [loading, setLoading] = useState(false)
+  const [loadingItems, setLoadingItems] = useState(false)
   const [error, setError] = useState('')
   const [lotes, setLotes] = useState<LoteGroup[]>([])
   const [notes, setNotes] = useState('')
@@ -38,6 +40,17 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
   // Inicializar los lotes cuando se abre el modal
   useEffect(() => {
     if (rental && isOpen) {
+      loadRentalItems()
+    }
+  }, [rental, isOpen])
+
+  const loadRentalItems = async () => {
+    if (!rental) return
+
+    setLoadingItems(true)
+    setError('')
+
+    try {
       // Obtener IDs de canastillas ya devueltas
       const returnedCanastillaIds = new Set<string>()
       if ((rental as any).rental_returns) {
@@ -52,12 +65,36 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
         }
       }
 
+      // Cargar TODOS los rental_items con paginación
+      const PAGE_SIZE = 1000
+      let allRentalItems: any[] = []
+      let hasMore = true
+      let offset = 0
+
+      while (hasMore) {
+        const { data: itemsBatch, error: itemsError } = await supabase
+          .from('rental_items')
+          .select('id, canastilla:canastillas(*)')
+          .eq('rental_id', rental.id)
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (itemsError) throw itemsError
+
+        if (itemsBatch && itemsBatch.length > 0) {
+          allRentalItems = [...allRentalItems, ...itemsBatch]
+          offset += PAGE_SIZE
+          hasMore = itemsBatch.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
+      }
+
       // Filtrar canastillas pendientes y agrupar por tamaño+color
-      const pendingItems = (rental.rental_items || [])
-        .filter(item => !returnedCanastillaIds.has(item.canastilla.id))
+      const pendingItems = allRentalItems
+        .filter(item => item.canastilla && !returnedCanastillaIds.has(item.canastilla.id))
         .map(item => ({
           id: item.canastilla.id,
-          rental_item_id: (item as any).id || '',
+          rental_item_id: item.id || '',
           canastilla: item.canastilla
         }))
 
@@ -84,9 +121,13 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
 
       setLotes(Object.values(grouped))
       setNotes('')
-      setError('')
+    } catch (err: any) {
+      console.error('Error loading rental items:', err)
+      setError('Error al cargar las canastillas: ' + err.message)
+    } finally {
+      setLoadingItems(false)
     }
-  }, [rental, isOpen])
+  }
 
   if (!rental) return null
 
@@ -222,19 +263,23 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
         ></div>
 
         {/* Modal */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-[calc(100%-2rem)] sm:max-w-2xl mx-4 sm:mx-auto"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {/* Header */}
-          <div className="bg-primary-600 px-6 py-4">
+          <div className="bg-primary-600 px-4 sm:px-6 py-3 sm:py-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-base sm:text-lg font-semibold text-white">
                 Procesar Retorno
               </h3>
               <button
                 type="button"
                 onClick={onClose}
-                className="text-white hover:text-gray-200"
+                className="text-white hover:text-gray-200 p-1"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -242,7 +287,7 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
           </div>
 
           {/* Body */}
-          <div className="px-6 py-6 space-y-6 max-h-[70vh] overflow-y-auto">
+          <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 max-h-[65vh] overflow-y-auto">
             {error && (
               <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-lg">
                 <p className="text-sm">{error}</p>
@@ -250,19 +295,19 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
             )}
 
             {/* Información del cliente y alquiler */}
-            <div className="flex gap-6">
-              <div className="flex-1">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Cliente</h4>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-base font-semibold text-gray-900">{rental.sale_point?.name}</p>
-                  <p className="text-sm text-gray-600">{rental.sale_point?.contact_name}</p>
-                  <p className="text-sm text-gray-500">{rental.sale_point?.contact_phone}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
+              <div>
+                <h4 className="text-xs sm:text-sm font-medium text-gray-700 mb-2">Cliente</h4>
+                <div className="p-3 sm:p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm sm:text-base font-semibold text-gray-900 truncate">{rental.sale_point?.name}</p>
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">{rental.sale_point?.contact_name}</p>
+                  <p className="text-xs sm:text-sm text-gray-500">{rental.sale_point?.contact_phone}</p>
                 </div>
               </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Detalles del Alquiler</h4>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-1">
+              <div>
+                <h4 className="text-xs sm:text-sm font-medium text-gray-700 mb-2">Detalles</h4>
+                <div className="p-3 sm:p-4 bg-gray-50 rounded-lg">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className={`px-2 py-0.5 text-xs font-medium rounded ${
                       rental.rental_type === 'INTERNO'
                         ? 'bg-purple-100 text-purple-800'
@@ -271,11 +316,11 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
                       {rental.rental_type}
                     </span>
                     <span className="text-xs text-gray-500">
-                      Remisión: {rental.remision_number || 'N/A'}
+                      {rental.remision_number || 'N/A'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600">Inicio: {formatDate(rental.start_date)}</p>
-                  <p className="text-sm font-semibold text-gray-900">Días: {actualDays}</p>
+                  <p className="text-xs sm:text-sm text-gray-600">Inicio: {formatDate(rental.start_date)}</p>
+                  <p className="text-xs sm:text-sm font-semibold text-gray-900">Días: {actualDays}</p>
                 </div>
               </div>
             </div>
@@ -286,25 +331,35 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
                 <h4 className="text-sm font-medium text-gray-700">
                   Canastillas a Devolver por Lote
                 </h4>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDevolverTodoGlobal}
-                    className="text-xs text-primary-600 hover:text-primary-800 font-medium"
-                  >
-                    Devolver todas
-                  </button>
-                  <span className="text-gray-300">|</span>
-                  <button
-                    type="button"
-                    onClick={handleLimpiarTodo}
-                    className="text-xs text-gray-500 hover:text-gray-700 font-medium"
-                  >
-                    Limpiar
-                  </button>
-                </div>
+                {!loadingItems && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDevolverTodoGlobal}
+                      className="text-xs text-primary-600 hover:text-primary-800 font-medium"
+                    >
+                      Devolver todas
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      type="button"
+                      onClick={handleLimpiarTodo}
+                      className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                )}
               </div>
 
+              {loadingItems ? (
+                <div className="flex items-center justify-center h-32 border border-gray-200 rounded-lg">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                    <p className="text-sm text-gray-500 mt-2">Cargando canastillas...</p>
+                  </div>
+                </div>
+              ) : (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 {/* Header de la tabla */}
                 <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-100 text-xs font-medium text-gray-600 uppercase">
@@ -366,6 +421,7 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
                   <div className="col-span-2"></div>
                 </div>
               </div>
+              )}
 
               {/* Indicador de restantes */}
               {totalCanastillasDevolver > 0 && (
@@ -470,25 +526,27 @@ export function ProcesarRetornoModal({ isOpen, onClose, onSuccess, rental }: Pro
           </div>
 
           {/* Footer */}
-          <div className="bg-gray-50 px-6 py-4 flex items-center justify-end space-x-3">
+          <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={loading}
+              className="w-full sm:w-auto text-sm order-2 sm:order-1"
             >
               Cancelar
             </Button>
             <Button
               onClick={handleProcessReturn}
               loading={loading}
-              disabled={loading || totalCanastillasDevolver === 0}
+              disabled={loading || loadingItems || totalCanastillasDevolver === 0}
+              className="w-full sm:w-auto text-sm order-1 sm:order-2"
             >
               {loading
                 ? 'Procesando...'
                 : isPartialReturn
-                  ? `Procesar Devolución Parcial (${totalCanastillasDevolver})`
-                  : `Confirmar Retorno (${totalCanastillasDevolver})`
+                  ? `Devolución (${totalCanastillasDevolver})`
+                  : `Confirmar (${totalCanastillasDevolver})`
               }
             </Button>
           </div>

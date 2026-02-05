@@ -52,15 +52,33 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
     try {
       if (!user) return
 
-      const { data, error } = await supabase
-        .from('canastillas')
-        .select('*')
-        .eq('current_owner_id', user.id)  // ✅ SOLO TUS canastillas
-        .eq('status', 'DISPONIBLE')        // ✅ SOLO DISPONIBLES
-        .order('codigo')
+      // Cargar TODAS las canastillas disponibles usando paginación interna
+      const PAGE_SIZE = 1000
+      let allCanastillas: Canastilla[] = []
+      let hasMore = true
+      let offset = 0
 
-      if (error) throw error
-      setCanastillasDisponibles(data || [])
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('canastillas')
+          .select('*')
+          .eq('current_owner_id', user.id)
+          .eq('status', 'DISPONIBLE')
+          .order('codigo')
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          allCanastillas = [...allCanastillas, ...data]
+          offset += PAGE_SIZE
+          hasMore = data.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
+      }
+
+      setCanastillasDisponibles(allCanastillas)
     } catch (error) {
       console.error('Error fetching canastillas:', error)
       setCanastillasDisponibles([])
@@ -140,41 +158,74 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
 
       if (rentalError) throw rentalError
 
-      // 4. Insertar las canastillas del alquiler
+      // 4. Insertar las canastillas del alquiler (en lotes de 500)
       const rentalItems = canastillaIds.map(canastillaId => ({
         rental_id: rental.id,
         canastilla_id: canastillaId
       }))
 
-      const { error: itemsError } = await supabase
-        .from('rental_items')
-        .insert(rentalItems)
+      const BATCH_SIZE = 500
+      for (let i = 0; i < rentalItems.length; i += BATCH_SIZE) {
+        const batch = rentalItems.slice(i, i + BATCH_SIZE)
+        const { error: itemsError } = await supabase
+          .from('rental_items')
+          .insert(batch)
 
-      if (itemsError) throw itemsError
+        if (itemsError) throw itemsError
+      }
 
-      // 5. Actualizar estado de las canastillas
-      const { error: updateError } = await supabase
-        .from('canastillas')
-        .update({ status: 'EN_ALQUILER' })
-        .in('id', canastillaIds)
+      // 5. Actualizar estado de las canastillas (en lotes de 500)
+      for (let i = 0; i < canastillaIds.length; i += BATCH_SIZE) {
+        const batch = canastillaIds.slice(i, i + BATCH_SIZE)
+        const { error: updateError } = await supabase
+          .from('canastillas')
+          .update({ status: 'EN_ALQUILER' })
+          .in('id', batch)
 
-      if (updateError) throw updateError
+        if (updateError) throw updateError
+      }
 
-      // 6. Obtener el alquiler completo con todos los datos para el PDF
-      const { data: rentalComplete, error: fetchError } = await supabase
+      // 6. Obtener el alquiler base sin items (para evitar límite de 1000)
+      const { data: rentalBase, error: fetchError } = await supabase
         .from('rentals')
         .select(`
           *,
-          sale_point:sale_points(*),
-          rental_items(
-            *,
-            canastilla:canastillas(*)
-          )
+          sale_point:sale_points(*)
         `)
         .eq('id', rental.id)
         .single()
 
       if (fetchError) throw fetchError
+
+      // Obtener TODOS los rental_items con paginación
+      const PAGE_SIZE_ITEMS = 1000
+      let allRentalItems: any[] = []
+      let hasMoreItems = true
+      let offsetItems = 0
+
+      while (hasMoreItems) {
+        const { data: itemsBatch, error: itemsFetchError } = await supabase
+          .from('rental_items')
+          .select('*, canastilla:canastillas(*)')
+          .eq('rental_id', rental.id)
+          .range(offsetItems, offsetItems + PAGE_SIZE_ITEMS - 1)
+
+        if (itemsFetchError) throw itemsFetchError
+
+        if (itemsBatch && itemsBatch.length > 0) {
+          allRentalItems = [...allRentalItems, ...itemsBatch]
+          offsetItems += PAGE_SIZE_ITEMS
+          hasMoreItems = itemsBatch.length === PAGE_SIZE_ITEMS
+        } else {
+          hasMoreItems = false
+        }
+      }
+
+      // Combinar rental con todos sus items
+      const rentalComplete = {
+        ...rentalBase,
+        rental_items: allRentalItems
+      }
 
       // 7. Generar y abrir PDF de remisión automáticamente
       const { openRemisionPDF } = await import('@/utils/remisionGenerator')
@@ -225,24 +276,28 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
         ></div>
 
         {/* Modal */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-[calc(100%-2rem)] sm:max-w-4xl mx-4 sm:mx-auto"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {/* Header */}
-          <div className="bg-primary-600 px-6 py-4">
+          <div className="bg-primary-600 px-4 sm:px-6 py-3 sm:py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-semibold text-white truncate">
                   Crear Alquiler
                 </h3>
-                <p className="text-sm text-primary-100 mt-1">
-                  Paso {step} de 2: {step === 1 ? 'Seleccionar Cliente' : 'Seleccionar Canastillas'}
+                <p className="text-xs sm:text-sm text-primary-100 mt-0.5 sm:mt-1">
+                  Paso {step}/2: {step === 1 ? 'Cliente' : 'Canastillas'}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleClose}
-                className="text-white hover:text-gray-200"
+                className="text-white hover:text-gray-200 ml-2 p-1"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -250,7 +305,7 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
           </div>
 
           {/* Body */}
-          <div className="px-6 py-6">
+          <div className="px-4 sm:px-6 py-4 sm:py-6 max-h-[60vh] overflow-y-auto">
             {error && (
               <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-lg mb-4">
                 <p className="text-sm">{error}</p>
@@ -373,7 +428,7 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
           </div>
 
           {/* Footer */}
-          <div className="bg-gray-50 px-6 py-4 flex items-center justify-between">
+          <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div>
               {step === 2 && (
                 <Button
@@ -381,22 +436,24 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
                   variant="outline"
                   onClick={() => setStep(1)}
                   disabled={loading}
+                  className="w-full sm:w-auto text-sm"
                 >
                   ← Volver
                 </Button>
               )}
             </div>
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleClose}
                 disabled={loading}
+                className="w-full sm:w-auto text-sm order-2 sm:order-1"
               >
                 Cancelar
               </Button>
               {step === 1 ? (
-                <Button onClick={handleNextStep}>
+                <Button onClick={handleNextStep} className="w-full sm:w-auto text-sm order-1 sm:order-2">
                   Siguiente →
                 </Button>
               ) : (
@@ -404,8 +461,9 @@ export function CrearAlquilerModal({ isOpen, onClose, onSuccess }: CrearAlquiler
                   onClick={handleSubmit}
                   loading={loading}
                   disabled={loading || selectedCanastillas.size === 0}
+                  className="w-full sm:w-auto text-sm order-1 sm:order-2"
                 >
-                  {loading ? 'Creando...' : 'Crear Alquiler y Generar Remisión'}
+                  {loading ? 'Creando...' : 'Crear Alquiler'}
                 </Button>
               )}
             </div>

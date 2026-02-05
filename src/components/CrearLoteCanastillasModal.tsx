@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from './Button'
-import { Input } from './Input'
 import { DynamicSelect } from './DynamicSelect'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/authStore'
 import { useCanastillaAttributes } from '@/hooks/useCanastillaAttributes'
 import type { TipoPropiedad } from '@/types'
 
@@ -13,11 +13,10 @@ interface CrearLoteCanastillasModalProps {
 }
 
 export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearLoteCanastillasModalProps) {
+  const { user } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState(0)
-  const [proximoCodigo, setProximoCodigo] = useState<string>('')
-  const [loadingCodigo, setLoadingCodigo] = useState(false)
 
   // Cargar atributos dinámicos
   const colores = useCanastillaAttributes('COLOR')
@@ -29,7 +28,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
 
   const [formData, setFormData] = useState({
     cantidad: '1',
-    codigo_inicio: '',
     size: '',
     color: '',
     shape: '',
@@ -37,57 +35,14 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
     current_location: '',
     current_area: '',
     tipo_propiedad: 'PROPIA' as TipoPropiedad,
-    generar_qr: true,
   })
 
-  // Cargar el próximo código disponible cuando el modal se abre
-  useEffect(() => {
-    if (isOpen) {
-      obtenerProximoCodigo()
-    }
-  }, [isOpen])
-
-  const obtenerProximoCodigo = async () => {
-    try {
-      setLoadingCodigo(true)
-      setError('')
-
-      // Obtener el último código usado ordenado por código descendente
-      const { data, error: fetchError } = await supabase
-        .from('canastillas')
-        .select('codigo')
-        .order('codigo', { ascending: false })
-        .limit(1)
-
-      if (fetchError) throw fetchError
-
-      let proximoCode = 'CAN-0001' // Código por defecto si no hay registros
-
-      if (data && data.length > 0) {
-        const ultimoCodigo = data[0].codigo
-        
-        // Extraer número del último código
-        const match = ultimoCodigo.match(/(\d+)/)
-        if (match) {
-          const prefijo = ultimoCodigo.substring(0, match.index)
-          const numeroUltimo = parseInt(match[0])
-          const longitudNumero = match[0].length
-
-          // Calcular el siguiente número (sumar 1 al último)
-          const proximoNumero = numeroUltimo + 1
-          const proximoFormateado = proximoNumero.toString().padStart(longitudNumero, '0')
-          proximoCode = `${prefijo}${proximoFormateado}`
-        }
-      }
-
-      setProximoCodigo(proximoCode)
-      setFormData(prev => ({ ...prev, codigo_inicio: proximoCode }))
-    } catch (err: any) {
-      console.error('Error obteniendo próximo código:', err)
-      setError('Error al cargar el próximo código disponible')
-    } finally {
-      setLoadingCodigo(false)
-    }
+  // Función para generar código único - incluye índice para evitar colisiones en loops rápidos
+  const generarCodigoUnico = (index: number) => {
+    const timestamp = Date.now().toString(36)
+    const random = Math.random().toString(36).substring(2, 6)
+    const indexStr = index.toString(36).padStart(4, '0')
+    return `C${timestamp}${indexStr}${random}`.toUpperCase()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,8 +52,24 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
     setProgress(0)
 
     try {
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData?.user?.id
+      // Validar campos requeridos primero
+      if (!formData.size || formData.size.trim() === '') {
+        throw new Error('El tamaño es requerido')
+      }
+      if (!formData.color || formData.color.trim() === '') {
+        throw new Error('El color es requerido')
+      }
+      if (!formData.condition || formData.condition.trim() === '') {
+        throw new Error('La condición es requerida')
+      }
+
+      // Usar el usuario del store de autenticación
+      if (!user || !user.id) {
+        throw new Error('No se pudo obtener el usuario. Por favor, inicia sesión nuevamente.')
+      }
+
+      const userId = user.id
+      console.log('Creando canastillas para usuario:', userId)
 
       // Convertir cantidad a número y validar
       const cantidadNum = Math.max(1, parseInt(formData.cantidad) || 1)
@@ -106,55 +77,17 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
         throw new Error('La cantidad debe estar entre 1 y 10,000')
       }
 
-      // Extraer el número inicial del código
-      const codigoMatch = formData.codigo_inicio.match(/(\d+)/)
-      if (!codigoMatch) {
-        throw new Error('El código de inicio debe contener un número (ej: CAN-0001)')
-      }
+      console.log(`Preparando ${cantidadNum} canastillas con códigos únicos...`)
 
-      const prefijo = formData.codigo_inicio.substring(0, codigoMatch.index)
-      const numeroInicial = parseInt(codigoMatch[0])
-      const longitudNumero = codigoMatch[0].length
-
-      // Generar códigos que se van a crear para validar duplicados
-      const codigosACrear = []
-      let numeroActual = numeroInicial
-
-      for (let i = 0; i < cantidadNum; i++) {
-        const numeroFormateado = numeroActual.toString().padStart(longitudNumero, '0')
-        const codigo = `${prefijo}${numeroFormateado}`
-        codigosACrear.push(codigo)
-        numeroActual++
-      }
-
-      // Verificar si algún código ya existe en la base de datos
-      const { data: existentes, error: checkError } = await supabase
-        .from('canastillas')
-        .select('codigo')
-        .in('codigo', codigosACrear)
-
-      if (checkError) throw checkError
-
-      if (existentes && existentes.length > 0) {
-        const codigosExistentes = existentes.map(c => c.codigo).join(', ')
-        throw new Error(
-          `Los siguientes códigos ya existen: ${codigosExistentes}. ` +
-          `Por favor, recarga la página para obtener el próximo código disponible.`
-        )
-      }
-
-      // Crear array de canastillas
+      // Crear array de canastillas con códigos únicos
       const canastillas = []
-      numeroActual = numeroInicial
 
       for (let i = 0; i < cantidadNum; i++) {
-        const numeroFormateado = numeroActual.toString().padStart(longitudNumero, '0')
-        const codigo = `${prefijo}${numeroFormateado}`
-        const qr_code = formData.generar_qr ? `QR-${codigo}` : ''
+        const codigo = generarCodigoUnico(i)
 
         canastillas.push({
           codigo,
-          qr_code,
+          qr_code: codigo, // Usar el mismo código único para evitar duplicados
           size: formData.size,
           color: formData.color,
           shape: formData.shape || null,
@@ -165,26 +98,35 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
           current_owner_id: userId,
           tipo_propiedad: formData.tipo_propiedad,
         })
-
-        numeroActual++
       }
 
-      // Insertar en lotes de 100 para evitar timeouts
-      const batchSize = 100
+      // Insertar en lotes de 500 para mayor velocidad
+      const batchSize = 500
       let insertados = 0
+
+      console.log(`Insertando ${canastillas.length} canastillas en lotes de ${batchSize}`)
 
       for (let i = 0; i < canastillas.length; i += batchSize) {
         const batch = canastillas.slice(i, i + batchSize)
+
+        console.log(`Insertando lote ${Math.floor(i / batchSize) + 1}: ${batch.length} canastillas`)
 
         const { error: insertError } = await supabase
           .from('canastillas')
           .insert(batch)
 
-        if (insertError) throw insertError
+        if (insertError) {
+          console.error('Error insertando lote:', insertError)
+          throw new Error(`Error al insertar canastillas: ${insertError.message}`)
+        }
+
+        console.log(`Lote insertado exitosamente: ${batch.length} canastillas`)
 
         insertados += batch.length
         setProgress(Math.round((insertados / canastillas.length) * 100))
       }
+
+      console.log(`Todas las ${insertados} canastillas fueron creadas exitosamente`)
 
       onSuccess()
       onClose()
@@ -192,7 +134,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
       // Resetear formulario
       setFormData({
         cantidad: '1',
-        codigo_inicio: '',
         size: '',
         color: '',
         shape: '',
@@ -200,9 +141,9 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
         current_location: '',
         current_area: '',
         tipo_propiedad: 'PROPIA',
-        generar_qr: true,
       })
     } catch (err: any) {
+      console.error('Error en handleSubmit:', err)
       setError(err.message || 'Error al crear el lote de canastillas')
     } finally {
       setLoading(false)
@@ -215,48 +156,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
   // Convertir cantidad a número para display
   const cantidadDisplay = Math.max(1, parseInt(formData.cantidad) || 1)
 
-  const codigoFinal = (() => {
-    try {
-      const codigoMatch = formData.codigo_inicio.match(/(\d+)/)
-      if (!codigoMatch) return ''
-
-      const prefijo = formData.codigo_inicio.substring(0, codigoMatch.index)
-      const numeroInicial = parseInt(codigoMatch[0])
-      const longitudNumero = codigoMatch[0].length
-      const numeroFinal = numeroInicial + cantidadDisplay - 1
-      const numeroFormateado = numeroFinal.toString().padStart(longitudNumero, '0')
-
-      return `${prefijo}${numeroFormateado}`
-    } catch {
-      return ''
-    }
-  })()
-
-  // Generar preview de códigos (máximo 10 para no saturar)
-  const generarPreview = () => {
-    try {
-      const codigoMatch = formData.codigo_inicio.match(/(\d+)/)
-      if (!codigoMatch) return []
-
-      const prefijo = formData.codigo_inicio.substring(0, codigoMatch.index)
-      const numeroInicial = parseInt(codigoMatch[0])
-      const longitudNumero = codigoMatch[0].length
-      const codigosPreview = []
-
-      const limite = Math.min(10, cantidadDisplay)
-      for (let i = 0; i < limite; i++) {
-        const numeroFormateado = (numeroInicial + i).toString().padStart(longitudNumero, '0')
-        codigosPreview.push(`${prefijo}${numeroFormateado}`)
-      }
-
-      return codigosPreview
-    } catch {
-      return []
-    }
-  }
-
-  const codigosPreview = generarPreview()
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
@@ -267,7 +166,11 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
         ></div>
 
         {/* Modal */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <form onSubmit={handleSubmit}>
             {/* Header */}
             <div className="bg-primary-600 px-6 py-4 sticky top-0">
@@ -308,12 +211,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                 </div>
               )}
 
-              {loadingCodigo && (
-                <div className="bg-gray-50 border-l-4 border-gray-400 text-gray-700 px-4 py-3 rounded-r-lg">
-                  <p className="text-sm">Obteniendo próximo código disponible...</p>
-                </div>
-              )}
-
               <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
@@ -323,36 +220,11 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-blue-700">
-                      Se crearán <strong>{cantidadDisplay}</strong> canastilla(s) secuencialmente.
-                      {' '}Los códigos irán desde <strong>{formData.codigo_inicio}</strong> hasta <strong>{codigoFinal}</strong>.
+                      Se crearán <strong>{cantidadDisplay}</strong> canastilla(s) con códigos únicos generados automáticamente.
                     </p>
                   </div>
                 </div>
               </div>
-
-              {/* Preview de códigos */}
-              {codigosPreview.length > 0 && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-900 mb-3">
-                    Preview de códigos a crear:
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                    {codigosPreview.map((codigo, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-white border border-gray-300 rounded px-3 py-2 text-center text-xs font-medium text-gray-700 hover:bg-primary-50 hover:border-primary-300 transition-colors"
-                      >
-                        {codigo}
-                      </div>
-                    ))}
-                    {cantidadDisplay > 10 && (
-                      <div className="bg-white border border-dashed border-gray-300 rounded px-3 py-2 text-center text-xs font-medium text-gray-500 flex items-center justify-center">
-                        +{cantidadDisplay - 10} más
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Cantidad */}
@@ -371,29 +243,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                     required
                   />
                   <p className="text-xs text-gray-500 mt-1">Máximo: 10,000 canastillas</p>
-                </div>
-
-                {/* Código Inicio - BLOQUEADO */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Código de Inicio (Automático) <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={formData.codigo_inicio}
-                      disabled
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed"
-                    />
-                    <div className="absolute right-3 top-2.5">
-                      <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Se genera automáticamente desde el siguiente código disponible
-                  </p>
                 </div>
 
                 {/* Tamaño */}
@@ -475,20 +324,6 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
                   placeholder="Seleccionar área..."
                 />
 
-                {/* Generar QR */}
-                <div className="md:col-span-2">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.generar_qr}
-                      onChange={(e) => setFormData({ ...formData, generar_qr: e.target.checked })}
-                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">
-                      Generar códigos QR automáticamente
-                    </span>
-                  </label>
-                </div>
               </div>
 
             </div>
@@ -506,7 +341,7 @@ export function CrearLoteCanastillasModal({ isOpen, onClose, onSuccess }: CrearL
               <Button
                 type="submit"
                 loading={loading}
-                disabled={loading || loadingCodigo}
+                disabled={loading}
               >
                 Crear {cantidadDisplay} Canastilla(s)
               </Button>

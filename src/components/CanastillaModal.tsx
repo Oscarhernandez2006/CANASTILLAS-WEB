@@ -118,7 +118,11 @@ export function CanastillaModal({ isOpen, onClose, onSuccess, canastilla }: Cana
         ></div>
 
         {/* Modal */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <form onSubmit={handleSubmit}>
             {/* Header */}
             <div className="bg-primary-600 px-6 py-4">
@@ -139,7 +143,7 @@ export function CanastillaModal({ isOpen, onClose, onSuccess, canastilla }: Cana
             </div>
 
             {/* Body */}
-            <div className="px-6 py-6 space-y-6">
+            <div className="px-6 py-6 space-y-6 max-h-[70vh] overflow-y-auto">
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-lg">
                   <p className="text-sm">{error}</p>

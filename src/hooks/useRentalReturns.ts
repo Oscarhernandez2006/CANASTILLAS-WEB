@@ -81,44 +81,55 @@ export function useRentalReturns() {
 
       if (returnError) throw returnError
 
-      // 3. Crear los items de la devolución
+      // 3. Crear los items de la devolución (con batching para evitar límite)
       const returnItems = params.canastillaIds.map((canastillaId, index) => ({
         rental_return_id: rentalReturn.id,
         canastilla_id: canastillaId,
         rental_item_id: params.rentalItemIds[index] || null
       }))
 
-      const { error: itemsError } = await supabase
-        .from('rental_return_items')
-        .insert(returnItems)
+      const BATCH_SIZE = 500
+      for (let i = 0; i < returnItems.length; i += BATCH_SIZE) {
+        const batch = returnItems.slice(i, i + BATCH_SIZE)
+        const { error: itemsError } = await supabase
+          .from('rental_return_items')
+          .insert(batch)
+        if (itemsError) throw itemsError
+      }
 
-      if (itemsError) throw itemsError
-
-      // 4. Actualizar estado de canastillas a DISPONIBLE
-      const { error: canastillasError } = await supabase
-        .from('canastillas')
-        .update({ status: 'DISPONIBLE' })
-        .in('id', params.canastillaIds)
-
-      if (canastillasError) throw canastillasError
+      // 4. Actualizar estado de canastillas a DISPONIBLE (con batching)
+      for (let i = 0; i < params.canastillaIds.length; i += BATCH_SIZE) {
+        const batch = params.canastillaIds.slice(i, i + BATCH_SIZE)
+        const { error: canastillasError } = await supabase
+          .from('canastillas')
+          .update({ status: 'DISPONIBLE' })
+          .in('id', batch)
+        if (canastillasError) throw canastillasError
+      }
 
       // 5. Obtener el rental actual para calcular contadores
-      // Necesitamos también el conteo de rental_items para calcular pending_items_count si no está inicializado
+      // Usar count exacto en lugar de cargar todos los items
       const { data: rental, error: rentalError } = await supabase
         .from('rentals')
         .select(`
           pending_items_count,
           returned_items_count,
-          total_invoiced,
-          rental_items(id)
+          total_invoiced
         `)
         .eq('id', params.rentalId)
         .single()
 
       if (rentalError) throw rentalError
 
-      // Si pending_items_count no está inicializado, usar el conteo de rental_items
-      const totalItems = rental.rental_items?.length || 0
+      // Obtener conteo exacto de rental_items si pending_items_count no está inicializado
+      let totalItems = 0
+      if (rental.pending_items_count === null || rental.pending_items_count === undefined) {
+        const { count } = await supabase
+          .from('rental_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('rental_id', params.rentalId)
+        totalItems = count || 0
+      }
       const currentPendingCount = rental.pending_items_count ?? totalItems
       const currentReturnedCount = rental.returned_items_count ?? 0
 

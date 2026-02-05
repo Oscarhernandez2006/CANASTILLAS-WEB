@@ -44,29 +44,54 @@ export function TraspasosPage() {
         .from('transfers')
         .update({
           status: 'ACEPTADO',
-          responded_at: now,
-          processed_at: now
+          responded_at: now
         })
         .eq('id', id)
 
       if (error) throw error
 
-      // Obtener el transfer completo con items y usuarios
-      const { data: transfer } = await supabase
+      // Obtener el transfer base sin items (para evitar límite de 1000)
+      const { data: transferBase } = await supabase
         .from('transfers')
         .select(`
           *,
           from_user:users!transfers_from_user_id_fkey(*),
-          to_user:users!transfers_to_user_id_fkey(*),
-          transfer_items(
-            *,
-            canastilla:canastillas(*)
-          )
+          to_user:users!transfers_to_user_id_fkey(*)
         `)
         .eq('id', id)
         .single()
 
-      if (transfer) {
+      if (transferBase) {
+        // Obtener TODOS los transfer_items con paginación
+        const PAGE_SIZE_ITEMS = 1000
+        let allTransferItems: any[] = []
+        let hasMoreItems = true
+        let offsetItems = 0
+
+        while (hasMoreItems) {
+          const { data: itemsBatch, error: itemsError } = await supabase
+            .from('transfer_items')
+            .select('*, canastilla:canastillas(*)')
+            .eq('transfer_id', id)
+            .range(offsetItems, offsetItems + PAGE_SIZE_ITEMS - 1)
+
+          if (itemsError) throw itemsError
+
+          if (itemsBatch && itemsBatch.length > 0) {
+            allTransferItems = [...allTransferItems, ...itemsBatch]
+            offsetItems += PAGE_SIZE_ITEMS
+            hasMoreItems = itemsBatch.length === PAGE_SIZE_ITEMS
+          } else {
+            hasMoreItems = false
+          }
+        }
+
+        // Combinar transfer con todos sus items
+        const transfer = {
+          ...transferBase,
+          transfer_items: allTransferItems
+        }
+
         const canastillaIds = transfer.transfer_items.map((item: any) => item.canastilla_id)
 
         // Cambiar el propietario y estado de las canastillas
@@ -74,22 +99,36 @@ export function TraspasosPage() {
         // Si es traspaso normal: estado DISPONIBLE
         const newStatus = isWashingTransfer ? 'EN_LAVADO' : 'DISPONIBLE'
 
-        await supabase
-          .from('canastillas')
-          .update({
-            current_owner_id: transfer.to_user_id,
-            status: newStatus
-          })
-          .in('id', canastillaIds)
+        // Obtener ubicación y área del usuario receptor para la trazabilidad
+        const newLocation = transfer.to_user?.department || null
+        const newArea = transfer.to_user?.area || null
+
+        // Actualizar en lotes de 500 para evitar límite de Supabase
+        const BATCH_SIZE = 500
+        for (let i = 0; i < canastillaIds.length; i += BATCH_SIZE) {
+          const batch = canastillaIds.slice(i, i + BATCH_SIZE)
+          const { error: updateError } = await supabase
+            .from('canastillas')
+            .update({
+              current_owner_id: transfer.to_user_id,
+              status: newStatus,
+              current_location: newLocation,  // Actualizar ubicación con la del usuario receptor
+              current_area: newArea           // Actualizar área con la del usuario receptor
+            })
+            .in('id', batch)
+
+          if (updateError) throw updateError
+        }
 
         // Abrir la remisión PDF
         await openRemisionTraspasoPDF(transfer as unknown as Transfer)
+
+        const successMessage = isWashingTransfer
+          ? '✅ Canastillas recibidas para lavado. Remisión: ' + (transfer.remision_number || '')
+          : '✅ Traspaso aprobado exitosamente. Remisión: ' + (transfer.remision_number || '')
+        alert(successMessage)
       }
 
-      const successMessage = isWashingTransfer
-        ? '✅ Canastillas recibidas para lavado. Remisión: ' + (transfer?.remision_number || '')
-        : '✅ Traspaso aprobado exitosamente. Remisión: ' + (transfer?.remision_number || '')
-      alert(successMessage)
       refreshTraspasos()
     } catch (error: any) {
       alert('❌ Error: ' + error.message)
@@ -98,22 +137,48 @@ export function TraspasosPage() {
 
   const handleVerRemision = async (transfer: any) => {
     try {
-      // Obtener el transfer completo si no tiene todos los datos
-      const { data: fullTransfer } = await supabase
+      // Obtener el transfer base sin items (para evitar límite de 1000)
+      const { data: transferBase } = await supabase
         .from('transfers')
         .select(`
           *,
           from_user:users!transfers_from_user_id_fkey(*),
-          to_user:users!transfers_to_user_id_fkey(*),
-          transfer_items(
-            *,
-            canastilla:canastillas(*)
-          )
+          to_user:users!transfers_to_user_id_fkey(*)
         `)
         .eq('id', transfer.id)
         .single()
 
-      if (fullTransfer) {
+      if (transferBase) {
+        // Obtener TODOS los transfer_items con paginación
+        const PAGE_SIZE_ITEMS = 1000
+        let allTransferItems: any[] = []
+        let hasMoreItems = true
+        let offsetItems = 0
+
+        while (hasMoreItems) {
+          const { data: itemsBatch, error: itemsError } = await supabase
+            .from('transfer_items')
+            .select('*, canastilla:canastillas(*)')
+            .eq('transfer_id', transfer.id)
+            .range(offsetItems, offsetItems + PAGE_SIZE_ITEMS - 1)
+
+          if (itemsError) throw itemsError
+
+          if (itemsBatch && itemsBatch.length > 0) {
+            allTransferItems = [...allTransferItems, ...itemsBatch]
+            offsetItems += PAGE_SIZE_ITEMS
+            hasMoreItems = itemsBatch.length === PAGE_SIZE_ITEMS
+          } else {
+            hasMoreItems = false
+          }
+        }
+
+        // Combinar transfer con todos sus items
+        const fullTransfer = {
+          ...transferBase,
+          transfer_items: allTransferItems
+        }
+
         await openRemisionTraspasoPDF(fullTransfer as unknown as Transfer)
       }
     } catch (error: any) {
@@ -202,41 +267,41 @@ export function TraspasosPage() {
 
         {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1 sm:gap-2">
             <button
               onClick={() => setActiveTab('solicitudes-recibidas')}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors relative ${
+              className={`px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors relative ${
                 activeTab === 'solicitudes-recibidas'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              📥 Recibidas
+              <span className="hidden sm:inline">📥 </span>Recibidas
               {(solicitudesRecibidas || []).length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-[10px] sm:text-xs">
                   {solicitudesRecibidas.length}
                 </span>
               )}
             </button>
             <button
               onClick={() => setActiveTab('solicitudes-enviadas')}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === 'solicitudes-enviadas'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              📤 Enviadas
+              <span className="hidden sm:inline">📤 </span>Enviadas
             </button>
             <button
               onClick={() => setActiveTab('historial')}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === 'historial'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              📋 Historial
+              <span className="hidden sm:inline">📋 </span>Historial
             </button>
           </div>
         </div>
@@ -286,7 +351,7 @@ export function TraspasosPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
-                            {(solicitud.transfer_items || []).length} canastillas
+                            {solicitud.items_count ?? (solicitud.transfer_items || []).length} canastillas
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -384,7 +449,7 @@ export function TraspasosPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
-                            {(solicitud.transfer_items || []).length} canastillas
+                            {solicitud.items_count ?? (solicitud.transfer_items || []).length} canastillas
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -477,7 +542,7 @@ export function TraspasosPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">
-                            {(item.transfer_items || []).length} canastillas
+                            {item.items_count ?? (item.transfer_items || []).length} canastillas
                           </div>
                         </td>
                         <td className="px-6 py-4">

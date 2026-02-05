@@ -217,22 +217,34 @@ export function useReportes() {
     }
   }
 
-  // Reporte de inventario
+  // Reporte de inventario - usa consultas de conteo para manejar más de 1000 canastillas
   const getReporteInventario = async (): Promise<ReporteInventario | null> => {
     try {
-      const { data, error } = await supabase
-        .from('canastillas')
-        .select('status')
+      // Usar consultas de conteo en paralelo para cada estado
+      const [
+        totalResult,
+        disponiblesResult,
+        enAlquilerResult,
+        danadasResult,
+        enMantenimientoResult,
+        perdidasResult,
+      ] = await Promise.all([
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }),
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }).eq('status', 'DISPONIBLE'),
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }).eq('status', 'EN_ALQUILER'),
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }).eq('status', 'DAÑADA'),
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }).eq('status', 'EN_MANTENIMIENTO'),
+        supabase.from('canastillas').select('*', { count: 'exact', head: true }).eq('status', 'PERDIDA'),
+      ])
 
-      if (error) throw error
-      if (!data) return null
+      if (totalResult.error) throw totalResult.error
 
-      const total = data.length
-      const disponibles = data.filter(c => c.status === 'DISPONIBLE').length
-      const enAlquiler = data.filter(c => c.status === 'EN_ALQUILER').length
-      const danadas = data.filter(c => c.status === 'DAÑADA').length
-      const enMantenimiento = data.filter(c => c.status === 'EN_MANTENIMIENTO').length
-      const perdidas = data.filter(c => c.status === 'PERDIDA').length
+      const total = totalResult.count || 0
+      const disponibles = disponiblesResult.count || 0
+      const enAlquiler = enAlquilerResult.count || 0
+      const danadas = danadasResult.count || 0
+      const enMantenimiento = enMantenimientoResult.count || 0
+      const perdidas = perdidasResult.count || 0
 
       return {
         total_canastillas: total,

@@ -76,19 +76,40 @@ export function Inventario() {
         }
       }
 
-      // 2. Construir query base de canastillas
-      let canastillasQuery = supabase
-        .from('canastillas')
-        .select('*')
+      // 2. Cargar TODAS las canastillas usando paginación interna
+      // Supabase limita a 1000 filas por consulta, así que cargamos en lotes
+      const PAGE_SIZE = 1000
+      let allCanastillas: any[] = []
+      let hasMore = true
+      let offset = 0
 
-      // Si NO es super_admin, filtrar solo las canastillas del usuario actual
-      if (!isSuperAdmin) {
-        canastillasQuery = canastillasQuery.eq('current_owner_id', user.id)
+      while (hasMore) {
+        let canastillasQuery = supabase
+          .from('canastillas')
+          .select('*')
+
+        // Si NO es super_admin, filtrar solo las canastillas del usuario actual
+        if (!isSuperAdmin) {
+          canastillasQuery = canastillasQuery.eq('current_owner_id', user.id)
+        }
+
+        const { data: canastillas, error: canErr } = await canastillasQuery
+          .order('codigo', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (canErr) throw canErr
+
+        if (canastillas && canastillas.length > 0) {
+          allCanastillas = [...allCanastillas, ...canastillas]
+          offset += PAGE_SIZE
+          // Si recibimos menos de PAGE_SIZE, ya no hay más datos
+          hasMore = canastillas.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
       }
 
-      const { data: canastillas, error: canErr } = await canastillasQuery.order('codigo', { ascending: true })
-
-      if (canErr) throw canErr
+      const canastillas = allCanastillas
 
       // 3. Calcular estadísticas
       const todasLasCanastillas = canastillas || []
@@ -257,62 +278,62 @@ export function Inventario() {
   if (loading) return <LoadingSpinner />
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
+      <div className="mb-4 sm:mb-8">
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">
           {isSuperAdmin ? 'Inventario General' : 'Mi Inventario'}
         </h1>
-        <p className="text-gray-500 mt-2">
+        <p className="text-gray-500 mt-1 sm:mt-2 text-sm sm:text-base">
           {isSuperAdmin
-            ? 'Todas las canastillas del sistema agrupadas por características'
-            : 'Tus canastillas agrupadas por características, tipo de propiedad y estado'
+            ? 'Todas las canastillas del sistema'
+            : 'Tus canastillas agrupadas por características'
           }
         </p>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <div className="p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           {error}
         </div>
       )}
 
       {/* Stats Cards */}
-      <div className={`grid grid-cols-2 ${isSuperAdmin ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
-        <div className="p-6 rounded-lg border bg-blue-50 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
+      <div className={`grid grid-cols-2 ${isSuperAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3 sm:gap-4`}>
+        <div className="p-3 sm:p-4 lg:p-6 rounded-lg border bg-blue-50 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">Total Canastillas</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{totalCanastillas}</p>
-            <p className="text-xs text-gray-500 mt-1">En tu inventario</p>
+            <p className="text-gray-600 text-xs sm:text-sm font-medium">Total</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-1 sm:mt-2">{totalCanastillas}</p>
+            <p className="text-xs text-gray-500 mt-1 hidden sm:block">En tu inventario</p>
           </div>
         </div>
-        <div className="p-6 rounded-lg border bg-green-50 border-green-200 shadow-sm hover:shadow-md transition-shadow">
+        <div className="p-3 sm:p-4 lg:p-6 rounded-lg border bg-green-50 border-green-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">Disponibles</p>
-            <p className="text-3xl font-bold text-green-600 mt-2">{canastillasDisponibles}</p>
-            <p className="text-xs text-gray-500 mt-1">Libres para usar</p>
+            <p className="text-gray-600 text-xs sm:text-sm font-medium">Disponibles</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-green-600 mt-1 sm:mt-2">{canastillasDisponibles}</p>
+            <p className="text-xs text-gray-500 mt-1 hidden sm:block">Libres para usar</p>
           </div>
         </div>
-        <div className="p-6 rounded-lg border bg-amber-50 border-amber-200 shadow-sm hover:shadow-md transition-shadow">
+        <div className="p-3 sm:p-4 lg:p-6 rounded-lg border bg-amber-50 border-amber-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">En Traspaso</p>
-            <p className="text-3xl font-bold text-amber-600 mt-2">{canastillasEnTraspaso}</p>
-            <p className="text-xs text-gray-500 mt-1">Solicitudes pendientes</p>
+            <p className="text-gray-600 text-xs sm:text-sm font-medium">En Traspaso</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600 mt-1 sm:mt-2">{canastillasEnTraspaso}</p>
+            <p className="text-xs text-gray-500 mt-1 hidden sm:block">Pendientes</p>
           </div>
         </div>
-        <div className="p-6 rounded-lg border bg-cyan-50 border-cyan-200 shadow-sm hover:shadow-md transition-shadow">
+        <div className="p-3 sm:p-4 lg:p-6 rounded-lg border bg-cyan-50 border-cyan-200 shadow-sm hover:shadow-md transition-shadow">
           <div>
-            <p className="text-gray-600 text-sm font-medium">En Lavado</p>
-            <p className="text-3xl font-bold text-cyan-600 mt-2">{canastillasEnLavado}</p>
-            <p className="text-xs text-gray-500 mt-1">En proceso de lavado</p>
+            <p className="text-gray-600 text-xs sm:text-sm font-medium">En Lavado</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-cyan-600 mt-1 sm:mt-2">{canastillasEnLavado}</p>
+            <p className="text-xs text-gray-500 mt-1 hidden sm:block">En proceso</p>
           </div>
         </div>
         {isSuperAdmin && (
-          <div className="p-6 rounded-lg border bg-gray-300 border-gray-500 shadow-sm hover:shadow-md transition-shadow">
+          <div className="p-3 sm:p-4 lg:p-6 rounded-lg border bg-gray-300 border-gray-500 shadow-sm hover:shadow-md transition-shadow col-span-2 lg:col-span-1">
             <div>
-              <p className="text-gray-700 text-sm font-medium">En Destrucción</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{enDestruccion}</p>
+              <p className="text-gray-700 text-xs sm:text-sm font-medium">Destrucción</p>
+              <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-1 sm:mt-2">{enDestruccion}</p>
             </div>
           </div>
         )}
@@ -320,10 +341,10 @@ export function Inventario() {
 
       {/* Tabla de Lotes */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Lotes Disponibles</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {lotes.length} lotes ({totalEnLotes} canastillas disponibles para usar)
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">Lotes Disponibles</h2>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            {lotes.length} lotes ({totalEnLotes} canastillas)
           </p>
         </div>
 
@@ -392,33 +413,34 @@ export function Inventario() {
         </div>
 
         {/* Paginación */}
-        <div className="px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="text-sm text-gray-600">
-            Mostrando {lotesPaginados.length === 0 ? 0 : Math.min((currentPage - 1) * itemsPerPage + 1, lotes.length)} a{' '}
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex flex-col items-center gap-3">
+          <div className="text-xs sm:text-sm text-gray-600 text-center">
+            {lotesPaginados.length === 0 ? 0 : Math.min((currentPage - 1) * itemsPerPage + 1, lotes.length)}-
             {Math.min(currentPage * itemsPerPage, lotes.length)} de {lotes.length} lotes
           </div>
 
           {totalPages > 1 && (
-            <div className="flex flex-wrap gap-2 justify-center sm:justify-end">
+            <div className="flex flex-wrap gap-1 sm:gap-2 justify-center">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                className="px-2 sm:px-4 py-1 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm font-medium"
               >
-                ← Anterior
+                <span className="hidden sm:inline">← Anterior</span>
+                <span className="sm:hidden">←</span>
               </button>
 
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(page => 
-                    page === 1 || 
-                    page === totalPages || 
+                  .filter(page =>
+                    page === 1 ||
+                    page === totalPages ||
                     Math.abs(page - currentPage) <= 1
                   )
                   .map((page, idx, arr) => {
                     if (idx > 0 && arr[idx - 1] !== page - 1) {
                       return (
-                        <span key={`dots-${page}`} className="px-2 text-gray-500">
+                        <span key={`dots-${page}`} className="px-1 sm:px-2 text-gray-500 text-xs">
                           ...
                         </span>
                       )
@@ -427,7 +449,7 @@ export function Inventario() {
                       <button
                         key={page}
                         onClick={() => setCurrentPage(page)}
-                        className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                        className={`px-2 sm:px-3 py-1 sm:py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium ${
                           currentPage === page
                             ? 'bg-primary-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -442,9 +464,10 @@ export function Inventario() {
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                className="px-2 sm:px-4 py-1 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm font-medium"
               >
-                Siguiente →
+                <span className="hidden sm:inline">Siguiente →</span>
+                <span className="sm:hidden">→</span>
               </button>
             </div>
           )}

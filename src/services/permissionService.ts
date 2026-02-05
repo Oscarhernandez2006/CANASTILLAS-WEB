@@ -71,17 +71,18 @@ export const PERMISSIONS_CONFIG: Record<PermissionModule, {
       { key: 'usuarios.activar_desactivar', label: 'Activar/Desactivar', description: 'Activar o desactivar usuarios' },
     ],
   },
-  lavado: {
-    label: 'Lavado',
+  reportes: {
+    label: 'Reportes',
     permissions: [
-      { key: 'lavado.ver', label: 'Ver Lavado', description: 'Acceder al módulo de lavado de canastillas' },
-      { key: 'lavado.enviar', label: 'Enviar a Lavado', description: 'Enviar canastillas al personal de lavado' },
-      { key: 'lavado.recibir', label: 'Recibir Canastillas', description: 'Confirmar recepción de canastillas (personal de lavado)' },
-      { key: 'lavado.marcar_completado', label: 'Marcar Completado', description: 'Marcar el lavado como completado (personal de lavado)' },
-      { key: 'lavado.entregar', label: 'Entregar Canastillas', description: 'Entregar canastillas lavadas al usuario (personal de lavado)' },
-      { key: 'lavado.confirmar_recepcion', label: 'Confirmar Recepción', description: 'Confirmar recepción de canastillas lavadas' },
-      { key: 'lavado.cancelar', label: 'Cancelar Orden', description: 'Cancelar órdenes de lavado pendientes' },
-      { key: 'lavado.descargar_remision', label: 'Descargar Remisión', description: 'Descargar remisiones de lavado en PDF' },
+      { key: 'reportes.ver', label: 'Ver Reportes', description: 'Acceder al módulo de reportes' },
+      { key: 'reportes.inventario', label: 'Reporte Inventario', description: 'Generar reporte de inventario de canastillas' },
+      { key: 'reportes.alquileres', label: 'Reporte Alquileres', description: 'Generar reporte de alquileres' },
+      { key: 'reportes.traspasos', label: 'Reporte Traspasos', description: 'Generar reporte de traspasos' },
+      { key: 'reportes.clientes', label: 'Reporte Clientes', description: 'Generar reporte de clientes' },
+      { key: 'reportes.usuarios', label: 'Reporte Usuarios', description: 'Generar reporte de usuarios' },
+      { key: 'reportes.ingresos', label: 'Reporte Ingresos', description: 'Generar reporte de ingresos por período' },
+      { key: 'reportes.canastillas_alquiladas', label: 'Top Canastillas', description: 'Generar ranking de canastillas más alquiladas' },
+      { key: 'reportes.clientes_frecuentes', label: 'Top Clientes', description: 'Generar ranking de clientes frecuentes' },
     ],
   },
 }
@@ -95,7 +96,7 @@ export const ALL_MODULES: PermissionModule[] = [
   'canastillas',
   'clientes',
   'usuarios',
-  'lavado',
+  'reportes',
 ]
 
 // Lista de todas las claves de permisos

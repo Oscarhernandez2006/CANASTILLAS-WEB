@@ -1,13 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from './Button'
 import { DynamicSelect } from './DynamicSelect'
-import { createUser } from '@/services/userService'
+import { updateUser } from '@/services/userService'
 import { useCanastillaAttributes } from '@/hooks/useCanastillaAttributes'
 
-interface CrearUsuarioModalProps {
+interface User {
+  id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  phone: string | null
+  role: string
+  is_active: boolean
+  department: string | null
+  area: string | null
+}
+
+interface EditarUsuarioModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  user: User | null
 }
 
 const ROLES = [
@@ -21,102 +34,102 @@ const ROLES = [
   { value: 'client', label: 'Cliente', description: 'Acceso limitado' },
 ]
 
-export function CrearUsuarioModal({ isOpen, onClose, onSuccess }: CrearUsuarioModalProps) {
+export function EditarUsuarioModal({ isOpen, onClose, onSuccess, user }: EditarUsuarioModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
 
   // Hooks para obtener ubicaciones y áreas
   const { attributes: ubicaciones, addAttribute: addUbicacion } = useCanastillaAttributes('UBICACION')
   const { attributes: areas, addAttribute: addArea } = useCanastillaAttributes('AREA')
 
   const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
     email: '',
-    password: '',
-    full_name: '',
-    role: 'operator',
     phone: '',
-    department: '',  // Ubicación del usuario
-    area: '',        // Área del usuario
+    role: 'operator',
+    department: '',
+    area: '',
   })
 
+  // Cargar datos del usuario cuando se abre el modal
+  useEffect(() => {
+    if (user && isOpen) {
+      setFormData({
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        role: user.role || 'operator',
+        department: user.department || '',
+        area: user.area || '',
+      })
+      setError('')
+    }
+  }, [user, isOpen])
+
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
+    e.preventDefault()
 
-  // Validaciones
-  if (!formData.email || !formData.password || !formData.full_name || !formData.role) {
-    setError('Por favor completa todos los campos requeridos')
-    return
+    if (!user) return
+
+    // Validaciones
+    if (!formData.first_name) {
+      setError('El nombre es obligatorio')
+      return
+    }
+
+    if (!formData.department) {
+      setError('La ubicación es obligatoria para la trazabilidad de canastillas')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      await updateUser(user.id, {
+        first_name: formData.first_name,
+        last_name: formData.last_name || undefined,
+        email: formData.email,
+        phone: formData.phone || undefined,
+        role: formData.role,
+        department: formData.department || undefined,
+        area: formData.area || undefined,
+      })
+
+      alert('Usuario actualizado exitosamente')
+      onSuccess()
+      handleClose()
+    } catch (err: any) {
+      console.error('Error updating user:', err)
+      setError(err.message || 'Error al actualizar el usuario')
+    } finally {
+      setLoading(false)
+    }
   }
-
-  if (!formData.department) {
-    setError('La ubicación es obligatoria para la trazabilidad de canastillas')
-    return
-  }
-
-  if (formData.password.length < 6) {
-    setError('La contraseña debe tener al menos 6 caracteres')
-    return
-  }
-
-  setLoading(true)
-  setError('')
-
-  try {
-    console.log('📤 Enviando datos:', {
-      email: formData.email,
-      full_name: formData.full_name,
-      role: formData.role,
-      phone: formData.phone,
-      department: formData.department,
-      area: formData.area,
-    })
-
-    const result = await createUser({
-      email: formData.email,
-      password: formData.password,
-      full_name: formData.full_name,
-      role: formData.role,
-      phone: formData.phone || undefined,
-      department: formData.department || undefined,
-      area: formData.area || undefined,
-    })
-
-    console.log('✅ Resultado:', result)
-
-    alert('✅ Usuario creado exitosamente. Ya puede iniciar sesión.')
-    onSuccess()
-    handleClose()
-  } catch (err: any) {
-    console.error('❌ Error creating user:', err)
-    setError(err.message || 'Error al crear el usuario')
-  } finally {
-    setLoading(false)
-  }
-}
 
   const handleClose = () => {
     setFormData({
+      first_name: '',
+      last_name: '',
       email: '',
-      password: '',
-      full_name: '',
-      role: 'operator',
       phone: '',
+      role: 'operator',
       department: '',
       area: '',
     })
     setError('')
-    setShowPassword(false)
     onClose()
   }
 
-  if (!isOpen) return null
+  if (!isOpen || !user) return null
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Overlay */}
-        <div 
+        <div
           className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
           onClick={handleClose}
         ></div>
@@ -131,7 +144,7 @@ export function CrearUsuarioModal({ isOpen, onClose, onSuccess }: CrearUsuarioMo
           <div className="bg-primary-600 px-6 py-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white">
-                Crear Nuevo Usuario
+                Editar Usuario
               </h3>
               <button
                 type="button"
@@ -154,74 +167,41 @@ export function CrearUsuarioModal({ isOpen, onClose, onSuccess }: CrearUsuarioMo
                 </div>
               )}
 
+              {/* Info del usuario */}
               <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 px-4 py-3 rounded-r-lg">
                 <p className="text-sm">
-                  <strong>Nota:</strong> El usuario podrá iniciar sesión inmediatamente con las credenciales proporcionadas.
+                  <strong>Email:</strong> {user.email}
                 </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nombre Completo *
-                </label>
-                <input
-                  type="text"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Juan Pérez"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="usuario@ejemplo.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Contraseña *
-                </label>
-                <div className="relative">
+              {/* Nombre y Apellido */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nombre *
+                  </label>
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    type="text"
+                    value={formData.first_name}
+                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Nombre"
                     required
-                    minLength={6}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    )}
-                  </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  El usuario usará esta contraseña para iniciar sesión
-                </p>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Apellido
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.last_name}
+                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="Apellido"
+                  />
+                </div>
               </div>
 
               <div>
@@ -258,12 +238,20 @@ export function CrearUsuarioModal({ isOpen, onClose, onSuccess }: CrearUsuarioMo
                 </p>
               </div>
 
-              {/* Ubicación y Área - Importante para trazabilidad de canastillas */}
+              {/* Ubicación y Área - Importante para trazabilidad */}
               <div className="bg-amber-50 border-l-4 border-amber-500 text-amber-700 px-4 py-3 rounded-r-lg">
                 <p className="text-sm">
                   <strong>Importante:</strong> La ubicación y área determinan dónde se moverán las canastillas cuando este usuario las reciba en un traspaso.
                 </p>
               </div>
+
+              {!formData.department && (
+                <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-r-lg">
+                  <p className="text-sm">
+                    <strong>Atención:</strong> Este usuario no tiene ubicación asignada. Es importante asignarle una para la correcta trazabilidad de las canastillas.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -312,7 +300,7 @@ export function CrearUsuarioModal({ isOpen, onClose, onSuccess }: CrearUsuarioMo
                 loading={loading}
                 disabled={loading}
               >
-                {loading ? 'Creando...' : 'Crear Usuario'}
+                {loading ? 'Guardando...' : 'Guardar Cambios'}
               </Button>
             </div>
           </form>

@@ -356,17 +356,34 @@ export const getWashingStaff = async () => {
   return data || []
 }
 
-// Obtener canastillas disponibles para enviar a lavado
+// Obtener canastillas disponibles para enviar a lavado (con paginación para manejar más de 1000)
 export const getAvailableCanastillasForWashing = async (ownerId: string) => {
-  const { data, error } = await supabase
-    .from('canastillas')
-    .select('*')
-    .eq('current_owner_id', ownerId)
-    .eq('status', 'DISPONIBLE')
-    .order('codigo', { ascending: true })
+  const PAGE_SIZE = 1000
+  let allCanastillas: any[] = []
+  let hasMore = true
+  let offset = 0
 
-  if (error) throw error
-  return data || []
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('canastillas')
+      .select('*')
+      .eq('current_owner_id', ownerId)
+      .eq('status', 'DISPONIBLE')
+      .order('codigo', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (error) throw error
+
+    if (data && data.length > 0) {
+      allCanastillas = [...allCanastillas, ...data]
+      offset += PAGE_SIZE
+      hasMore = data.length === PAGE_SIZE
+    } else {
+      hasMore = false
+    }
+  }
+
+  return allCanastillas
 }
 
 // Calcular tiempos de una orden

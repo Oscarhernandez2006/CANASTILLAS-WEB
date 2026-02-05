@@ -13,13 +13,14 @@ export interface User {
   updated_at: string
 }
 
-export type UserRole = 
+export type UserRole =
   | 'super_admin'
   | 'admin'
   | 'supervisor'
   | 'operator'
   | 'washing_staff'
   | 'logistics'
+  | 'conductor'
   | 'client'
 
 export interface Canastilla {
@@ -198,10 +199,11 @@ export interface Transfer {
   remision_generated_at?: string
   is_washing_transfer?: boolean  // Si es traspaso a personal de lavado
   requested_at: string
-  processed_at?: string
+  responded_at?: string
   created_at: string
   updated_at: string
   transfer_items?: TransferItem[]
+  items_count?: number  // Conteo real de canastillas (sin límite de 1000)
 }
 
 export interface TransferItem {
@@ -328,15 +330,16 @@ export type PermissionKey =
   | 'usuarios.crear'
   | 'usuarios.cambiar_rol'
   | 'usuarios.activar_desactivar'
-  // Lavado
-  | 'lavado.ver'
-  | 'lavado.enviar'
-  | 'lavado.recibir'
-  | 'lavado.marcar_completado'
-  | 'lavado.entregar'
-  | 'lavado.confirmar_recepcion'
-  | 'lavado.cancelar'
-  | 'lavado.descargar_remision'
+  // Reportes
+  | 'reportes.ver'
+  | 'reportes.inventario'
+  | 'reportes.alquileres'
+  | 'reportes.traspasos'
+  | 'reportes.clientes'
+  | 'reportes.usuarios'
+  | 'reportes.ingresos'
+  | 'reportes.canastillas_alquiladas'
+  | 'reportes.clientes_frecuentes'
 
 // Módulos del sistema (para agrupar permisos en la UI)
 export type PermissionModule =
@@ -347,7 +350,7 @@ export type PermissionModule =
   | 'canastillas'
   | 'clientes'
   | 'usuarios'
-  | 'lavado'
+  | 'reportes'
 
 // Estructura de un permiso en la base de datos
 export interface UserPermission {

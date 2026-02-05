@@ -25,6 +25,7 @@ export function DynamicSelect({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Cerrar dropdown cuando se hace clic fuera
   useEffect(() => {
@@ -40,6 +41,16 @@ export function DynamicSelect({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Hacer scroll al dropdown cuando se abre para que sea visible
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      // Pequeño delay para asegurar que el dropdown ya está renderizado
+      setTimeout(() => {
+        dropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 50)
+    }
+  }, [isOpen])
 
   const handleAddNew = async () => {
     if (!newValue.trim()) {
@@ -137,7 +148,12 @@ export function DynamicSelect({
 
         {/* Dropdown Menu */}
         {isOpen && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg">
+          <div
+            ref={dropdownRef}
+            className="absolute z-[100] w-full bg-white border border-gray-300 rounded-lg shadow-lg top-full mt-1"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {/* List of Options */}
             <div className="max-h-48 overflow-y-auto">
               {options.length > 0 ? (

@@ -64,6 +64,7 @@ export function getRoleLabel(role: string): string {
     operator: 'Operario',
     washing_staff: 'Personal de Lavado',
     logistics: 'Logística',
+    conductor: 'Conductor',
     client: 'Cliente',
   }
   return labels[role] || role

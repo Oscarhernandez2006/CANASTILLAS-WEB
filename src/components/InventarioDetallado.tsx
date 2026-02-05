@@ -26,15 +26,33 @@ export function InventarioDetallado() {
     try {
       setLoading(true)
 
-      // Obtener todas las canastillas del usuario
-      const { data: canastillasData, error: canastillasError } = await supabase
-        .from('canastillas')
-        .select('*')
-        .eq('current_owner_id', user.id)  // ✅ CORREGIDO: current_owner_id
-        .order('status')
-        .order('codigo')
+      // Cargar TODAS las canastillas usando paginación interna
+      const PAGE_SIZE = 1000
+      let allCanastillas: Canastilla[] = []
+      let hasMore = true
+      let offset = 0
 
-      if (canastillasError) throw canastillasError
+      while (hasMore) {
+        const { data, error: canastillasError } = await supabase
+          .from('canastillas')
+          .select('*')
+          .eq('current_owner_id', user.id)
+          .order('status')
+          .order('codigo')
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (canastillasError) throw canastillasError
+
+        if (data && data.length > 0) {
+          allCanastillas = [...allCanastillas, ...data]
+          offset += PAGE_SIZE
+          hasMore = data.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
+      }
+
+      const canastillasData = allCanastillas
 
       // Obtener alquileres activos con sus canastillas
       const { data: rentalsData, error: rentalsError } = await supabase

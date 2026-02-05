@@ -95,19 +95,35 @@ export function EnviarLavadoModal({
         }
       }
 
-      // 3. Obtener canastillas disponibles del usuario
-      const { data: disponibles, error: errorDisponibles } = await supabase
-        .from('canastillas')
-        .select('*')
-        .eq('current_owner_id', currentUser.id)
-        .eq('status', 'DISPONIBLE')
-        .order('codigo')
+      // 3. Obtener canastillas disponibles del usuario con paginación
+      const PAGE_SIZE = 1000
+      let disponibles: Canastilla[] = []
+      let hasMore = true
+      let offset = 0
 
-      if (errorDisponibles) throw errorDisponibles
+      while (hasMore) {
+        const { data, error: errorDisponibles } = await supabase
+          .from('canastillas')
+          .select('*')
+          .eq('current_owner_id', currentUser.id)
+          .eq('status', 'DISPONIBLE')
+          .order('codigo')
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (errorDisponibles) throw errorDisponibles
+
+        if (data && data.length > 0) {
+          disponibles = [...disponibles, ...data]
+          offset += PAGE_SIZE
+          hasMore = data.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
+      }
 
       // 4. Filtrar canastillas retenidas
       const todasRetenidas = [...canastillasEnTraspaso, ...canastillasEnLavado]
-      const canastillasLibres = (disponibles || []).filter(
+      const canastillasLibres = disponibles.filter(
         c => !todasRetenidas.includes(c.id)
       )
 
@@ -201,7 +217,11 @@ export function EnviarLavadoModal({
           onClick={handleClose}
         />
 
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <form onSubmit={handleSubmit}>
             <div className="bg-blue-600 px-6 py-4">
               <div className="flex items-center justify-between">

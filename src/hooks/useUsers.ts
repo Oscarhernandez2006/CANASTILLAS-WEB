@@ -9,6 +9,8 @@ export interface User {
   phone?: string | null
   role: string
   is_active: boolean
+  department?: string | null
+  area?: string | null
   created_at: string
   updated_at: string
 }
@@ -27,7 +29,7 @@ export function useUsers() {
       
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, first_name, last_name, phone, role, is_active, created_at, updated_at')
+        .select('id, email, first_name, last_name, phone, role, is_active, department, area, created_at, updated_at')
         .order('created_at', { ascending: false })
 
       if (error) {

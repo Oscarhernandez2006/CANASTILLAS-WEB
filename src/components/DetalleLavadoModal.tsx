@@ -38,7 +38,11 @@ export function DetalleLavadoModal({
           onClick={onClose}
         />
 
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <div className="bg-gray-800 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">

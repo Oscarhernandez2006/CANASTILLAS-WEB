@@ -48,14 +48,33 @@ export function SalidaCanastillasModal({
     try {
       const tipoPropiedad = tipoSalida === 'ALQUILADAS' ? 'ALQUILADA' : 'PROPIA'
 
-      const { data: canastillas, error: canErr } = await supabase
-        .from('canastillas')
-        .select('*')
-        .eq('tipo_propiedad', tipoPropiedad)
-        .eq('status', 'DISPONIBLE')
-        .order('color', { ascending: true })
+      // Cargar TODAS las canastillas usando paginación interna
+      const PAGE_SIZE = 1000
+      let allCanastillas: any[] = []
+      let hasMore = true
+      let offset = 0
 
-      if (canErr) throw canErr
+      while (hasMore) {
+        const { data, error: canErr } = await supabase
+          .from('canastillas')
+          .select('*')
+          .eq('tipo_propiedad', tipoPropiedad)
+          .eq('status', 'DISPONIBLE')
+          .order('color', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (canErr) throw canErr
+
+        if (data && data.length > 0) {
+          allCanastillas = [...allCanastillas, ...data]
+          offset += PAGE_SIZE
+          hasMore = data.length === PAGE_SIZE
+        } else {
+          hasMore = false
+        }
+      }
+
+      const canastillas = allCanastillas
 
       // Agrupar en lotes
       const lotesMap = new Map<string, Lote>()
@@ -158,38 +177,52 @@ export function SalidaCanastillasModal({
           }
         }
 
-        const { error: insertError } = await supabase
-          .from('canastillas_salidas')
-          .insert(registrosSalida)
+        // Insertar en lotes para evitar límite de 1000
+        const BATCH_SIZE = 500
+        for (let i = 0; i < registrosSalida.length; i += BATCH_SIZE) {
+          const batch = registrosSalida.slice(i, i + BATCH_SIZE)
+          const { error: insertError } = await supabase
+            .from('canastillas_salidas')
+            .insert(batch)
+          if (insertError) throw insertError
+        }
 
-        if (insertError) throw insertError
-
-        // Actualizar estado a EN_ALQUILER
+        // Actualizar estado a EN_ALQUILER en lotes
         const canastillaIds = canastillasAProcesar.flatMap((item) =>
           item.canastillas.map((c) => c.id)
         )
 
-        const { error: updateError } = await supabase
-          .from('canastillas')
-          .update({ status: 'EN_ALQUILER' })
-          .in('id', canastillaIds)
-
-        if (updateError) throw updateError
+        for (let i = 0; i < canastillaIds.length; i += BATCH_SIZE) {
+          const batch = canastillaIds.slice(i, i + BATCH_SIZE)
+          const { error: updateError } = await supabase
+            .from('canastillas')
+            .update({ status: 'EN_ALQUILER' })
+            .in('id', batch)
+          if (updateError) throw updateError
+        }
 
         alert(`✅ Se registraron ${getTotalSeleccionado()} canastilla(s) como salida`)
       } else {
         // DAR DE BAJA PROPIAS (SE ELIMINAN DEL INVENTARIO)
-        const { data: lotesFull } = await supabase
-          .from('canastillas')
-          .select('*')
-          .in(
-            'id',
-            canastillasAProcesar.flatMap((item) =>
-              item.canastillas.map((c) => c.id)
-            )
-          )
+        const BATCH_SIZE = 500
+        const allCanastillaIds = canastillasAProcesar.flatMap((item) =>
+          item.canastillas.map((c) => c.id)
+        )
 
-        const registrosBaja = lotesFull?.map((c) => ({
+        // Obtener datos completos en lotes
+        let lotesFull: any[] = []
+        for (let i = 0; i < allCanastillaIds.length; i += BATCH_SIZE) {
+          const batchIds = allCanastillaIds.slice(i, i + BATCH_SIZE)
+          const { data: batchData } = await supabase
+            .from('canastillas')
+            .select('*')
+            .in('id', batchIds)
+          if (batchData) {
+            lotesFull = [...lotesFull, ...batchData]
+          }
+        }
+
+        const registrosBaja = lotesFull.map((c) => ({
           canastilla_id: c.id,
           codigo: c.codigo,
           qr_code: c.qr_code,
@@ -206,26 +239,26 @@ export function SalidaCanastillasModal({
           tipo_baja: 'BAJA_PROPIA',
           dado_baja_por: user?.id || null,
           created_at_original: c.created_at,
-        })) || []
+        }))
 
-        const { error: insertError } = await supabase
-          .from('canastillas_bajas')
-          .insert(registrosBaja)
+        // Insertar registros de baja en lotes
+        for (let i = 0; i < registrosBaja.length; i += BATCH_SIZE) {
+          const batch = registrosBaja.slice(i, i + BATCH_SIZE)
+          const { error: insertError } = await supabase
+            .from('canastillas_bajas')
+            .insert(batch)
+          if (insertError) throw insertError
+        }
 
-        if (insertError) throw insertError
-
-        // Eliminar del inventario
-        const { error: deleteError } = await supabase
-          .from('canastillas')
-          .delete()
-          .in(
-            'id',
-            canastillasAProcesar.flatMap((item) =>
-              item.canastillas.map((c) => c.id)
-            )
-          )
-
-        if (deleteError) throw deleteError
+        // Eliminar del inventario en lotes
+        for (let i = 0; i < allCanastillaIds.length; i += BATCH_SIZE) {
+          const batchIds = allCanastillaIds.slice(i, i + BATCH_SIZE)
+          const { error: deleteError } = await supabase
+            .from('canastillas')
+            .delete()
+            .in('id', batchIds)
+          if (deleteError) throw deleteError
+        }
 
         alert(`✅ Se dieron de baja ${getTotalSeleccionado()} canastilla(s)`)
       }
@@ -256,7 +289,11 @@ export function SalidaCanastillasModal({
           onClick={handleClose}
         />
 
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
+        <div
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {/* Header */}
           <div className="bg-red-600 px-6 py-4">
             <div className="flex items-center justify-between">

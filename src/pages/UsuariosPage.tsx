@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/Button'
 import { CrearUsuarioModal } from '@/components/CrearUsuarioModal'
+import { EditarUsuarioModal } from '@/components/EditarUsuarioModal'
 import { useUsers } from '@/hooks/useUsers'
 import { useAuthStore } from '@/store/authStore'
 import { updateUser, activateUser, deactivateUser } from '@/services/userService'
@@ -29,12 +30,19 @@ const ROLE_COLORS: { [key: string]: string } = {
 
 export function UsuariosPage() {
   const [showCrearModal, setShowCrearModal] = useState(false)
+  const [showEditarModal, setShowEditarModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<any>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  
+
   const { users, loading, refreshUsers } = useUsers()
   const { user: currentUser } = useAuthStore()
+
+  const handleEditUser = (user: any) => {
+    setSelectedUser(user)
+    setShowEditarModal(true)
+  }
 
   const isSuperAdmin = currentUser?.role === 'super_admin'
 
@@ -190,10 +198,10 @@ export function UsuariosPage() {
                       Rol
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Contacto
+                      Ubicación / Área
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Fecha Registro
+                      Contacto
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Estado
@@ -236,10 +244,21 @@ export function UsuariosPage() {
                         </select>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{user.phone || 'Sin teléfono'}</div>
+                        {user.department ? (
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{user.department}</div>
+                            {user.area && (
+                              <div className="text-xs text-gray-500">{user.area}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                            Sin ubicación
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatDate(user.created_at)}</div>
+                        <div className="text-sm text-gray-900">{user.phone || 'Sin teléfono'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span className={`px-3 py-1 text-xs font-medium rounded-full ${
@@ -250,13 +269,19 @@ export function UsuariosPage() {
                           {user.is_active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                        <button
+                          onClick={() => handleEditUser(user)}
+                          className="text-primary-600 hover:text-primary-900"
+                        >
+                          Editar
+                        </button>
                         <button
                           onClick={() => handleToggleStatus(user.id, user.is_active)}
                           disabled={user.id === currentUser?.id}
                           className={`${
-                            user.is_active 
-                              ? 'text-red-600 hover:text-red-900' 
+                            user.is_active
+                              ? 'text-red-600 hover:text-red-900'
                               : 'text-green-600 hover:text-green-900'
                           } ${
                             user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : ''
@@ -274,7 +299,7 @@ export function UsuariosPage() {
         </div>
 
         {/* Estadísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-600">Total Usuarios</span>
@@ -312,6 +337,19 @@ export function UsuariosPage() {
               {users.filter(u => u.role === 'super_admin' || u.role === 'admin').length}
             </p>
           </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-amber-100 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-amber-600">Sin Ubicación</span>
+              <span className="text-2xl">📍</span>
+            </div>
+            <p className="text-2xl font-bold text-amber-600">
+              {users.filter(u => !u.department).length}
+            </p>
+            {users.filter(u => !u.department).length > 0 && (
+              <p className="text-xs text-amber-500 mt-1">Requieren edición</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -320,6 +358,17 @@ export function UsuariosPage() {
         isOpen={showCrearModal}
         onClose={() => setShowCrearModal(false)}
         onSuccess={refreshUsers}
+      />
+
+      {/* Modal de Editar Usuario */}
+      <EditarUsuarioModal
+        isOpen={showEditarModal}
+        onClose={() => {
+          setShowEditarModal(false)
+          setSelectedUser(null)
+        }}
+        onSuccess={refreshUsers}
+        user={selectedUser}
       />
     </DashboardLayout>
   )

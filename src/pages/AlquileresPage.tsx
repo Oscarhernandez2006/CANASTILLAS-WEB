@@ -33,8 +33,8 @@ export function AlquileresPage() {
   const permissions = usePermissions()
   const { user } = useAuthStore()
 
-  // Solo super_admin puede crear alquileres
-  const canCreateRental = user?.role === 'super_admin'
+  // super_admin y admin pueden crear alquileres
+  const canCreateRental = user?.role === 'super_admin' || user?.role === 'admin'
 
   // Permiso para editar configuración: super_admin o quien tenga el permiso
   const canEditConfig = user?.role === 'super_admin' || permissions.hasPermission('alquileres.editar_configuracion')
@@ -68,20 +68,20 @@ export function AlquileresPage() {
       <div className="space-y-6">
         {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2">
-          <div className="flex space-x-2">
+          <div className="flex space-x-1 sm:space-x-2">
             <button
               onClick={() => setActiveTab('activos')}
-              className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`flex-1 px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === 'activos'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Alquileres Activos ({activeRentals.length})
+              <span className="hidden sm:inline">Alquileres </span>Activos ({activeRentals.length})
             </button>
             <button
               onClick={() => setActiveTab('historial')}
-              className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`flex-1 px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === 'historial'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
@@ -91,13 +91,13 @@ export function AlquileresPage() {
             </button>
             <button
               onClick={() => setActiveTab('configuracion')}
-              className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`flex-1 px-2 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === 'configuracion'
                   ? 'bg-primary-600 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Configuración
+              <span className="hidden sm:inline">Configura</span><span className="sm:hidden">Config</span><span className="hidden sm:inline">ción</span>
             </button>
           </div>
         </div>
@@ -138,7 +138,7 @@ export function AlquileresPage() {
               <div className="grid grid-cols-1 gap-4">
                 {activeRentals.map((rental) => {
                   const currentDays = calculateCurrentDays(rental.start_date)
-                  const totalOriginal = rental.rental_items?.length || 0
+                  const totalOriginal = (rental as any).items_count ?? rental.rental_items?.length ?? 0
 
                   // Calcular contadores de devoluciones desde rental_returns (más confiable)
                   const returnedFromReturns = (rental as any).rental_returns?.reduce((sum: number, ret: any) => {
@@ -230,10 +230,10 @@ export function AlquileresPage() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
                         <div>
                           <p className="text-xs text-gray-500 mb-1">
-                            {hasPartialReturns ? 'Canastillas pendientes' : 'Canastillas'}
+                            {hasPartialReturns ? 'Pendientes' : 'Canastillas'}
                           </p>
                           <p className="text-sm font-semibold text-gray-900">
                             {pendingCount}
@@ -243,15 +243,15 @@ export function AlquileresPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500 mb-1">Días transcurridos</p>
-                          <p className="text-sm font-semibold text-gray-900">{currentDays} días</p>
+                          <p className="text-xs text-gray-500 mb-1">Días</p>
+                          <p className="text-sm font-semibold text-gray-900">{currentDays}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500 mb-1">Tarifa diaria</p>
+                          <p className="text-xs text-gray-500 mb-1">Tarifa</p>
                           <p className="text-sm font-semibold text-gray-900">{formatCurrency(rental.daily_rate)}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500 mb-1">Fecha de salida</p>
+                          <p className="text-xs text-gray-500 mb-1">Salida</p>
                           <p className="text-sm font-semibold text-gray-900">{formatDate(rental.start_date)}</p>
                         </div>
                       </div>
@@ -263,18 +263,19 @@ export function AlquileresPage() {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-gray-200">
                         <button
                           onClick={() => {
                             setSelectedRental(rental)
                             setShowDetalleModal(true)
                           }}
-                          className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                          className="text-sm text-primary-600 hover:text-primary-700 font-medium text-center sm:text-left"
                         >
                           Ver detalles
                         </button>
                         <Button
                           size="sm"
+                          className="w-full sm:w-auto"
                           onClick={() => {
                             setSelectedRental(rental)
                             setShowRetornoModal(true)
@@ -346,7 +347,7 @@ export function AlquileresPage() {
                           <p className="text-xs text-gray-500">{rental.sale_point?.contact_name}</p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {rental.rental_items?.length || 0}
+                          {(rental as any).items_count ?? rental.rental_items?.length ?? 0}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {rental.actual_days || 0}

@@ -6,6 +6,8 @@ export interface CreateUserData {
   full_name: string
   role: string
   phone?: string
+  department?: string  // Ubicación del usuario
+  area?: string        // Área del usuario
 }
 
 export interface UpdateUserData {
@@ -15,6 +17,8 @@ export interface UpdateUserData {
   role?: string
   phone?: string
   is_active?: boolean
+  department?: string  // Ubicación del usuario
+  area?: string        // Área del usuario
 }
 
 // Crear usuario usando función de base de datos
@@ -26,7 +30,7 @@ export const createUser = async (userData: CreateUserData) => {
       p_role: userData.role,
       p_phone: userData.phone || null,
     })
-    
+
     const { data, error } = await supabase.rpc('create_user_direct', {
       p_email: userData.email,
       p_password: userData.password,
@@ -46,6 +50,24 @@ export const createUser = async (userData: CreateUserData) => {
       throw new Error('No se recibió respuesta de la función')
     }
 
+    // Si se proporcionaron ubicación/área, actualizar el usuario
+    if (userData.department || userData.area) {
+      const userId = data.user_id || data.id || data
+      if (userId) {
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            department: userData.department || null,
+            area: userData.area || null,
+          })
+          .eq('id', userId)
+
+        if (updateError) {
+          console.warn('⚠️ No se pudo actualizar ubicación/área:', updateError)
+        }
+      }
+    }
+
     console.log('✅ Usuario creado exitosamente:', data)
     return { success: true, data }
   } catch (error: any) {
@@ -59,7 +81,7 @@ export const getAllUsers = async () => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, first_name, last_name, phone, role, is_active, created_at, updated_at')
+      .select('id, email, first_name, last_name, phone, role, is_active, department, area, created_at, updated_at')
       .order('created_at', { ascending: false })
 
     if (error) throw error
